@@ -95,7 +95,7 @@ tally_stats = {
 
 # Setup screen
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption('Week-Based Game Calendar UI')
+pygame.display.set_caption('Unreal World Calendar')
 clock = pygame.time.Clock()
 
 # Layout for weekly columns
