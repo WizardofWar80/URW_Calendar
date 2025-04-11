@@ -17,4 +17,6 @@ The script should be placed in the savegame folder that you want to monitor whil
 
 The script reads the message log and keeps track of information in a seperate file, because the message log 'forgets' older stuff.
 
+Right now I am playing on version 3.85, so this has not been tested with the newer versions yet.
+
 Please don't judge the software architecture, this is a very quick and dirty version, lots of vibe code happening.
