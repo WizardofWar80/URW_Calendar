@@ -1,2 +1,20 @@
 # URW_Calendar
 Helpful calendar for the open world survival game Unreal World
+
+Prerequisites:
+Python3
+Pygame
+
+This is a companion application to run on a second monitor which provides a helpful overview of events in the world of "Unreal World".
+It features a calendar year view, with highlighted seasons, markers of important events like when smoking or drying meat is finished, same for tanning, retting, drying nettles.
+There is also a weekly view that has an hourly breakdown of each day of the week.
+
+It also keeps track of chores, such as making a fire when you are smoking meat, practicing herblore or weatherlore, tell your dog to eat every day.
+
+Lastly there is a tally of all your kills.
+
+The script should be placed in the savegame folder that you want to monitor while playing and can be started at any time.
+
+The script reads the message log and keeps track of information in a seperate file, because the message log 'forgets' older stuff.
+
+Please don't judge the software architecture, this is a very quick and dirty version, lots of vibe code happening.
