@@ -1,9 +1,9 @@
 # URW_Calendar
-Helpful calendar for the open world survival game Unreal World
+Helpful calendar for the open world survival game Unreal World by Enormus Elk -> https://www.unrealworld.fi/ 
 
-Prerequisites:
-Python3
-Pygame
+Prerequisites:<br>
+*Python3<br>
+*Pygame<br>
 
 This is a companion application to run on a second monitor which provides a helpful overview of events in the world of "Unreal World".
 It features a calendar year view, with highlighted seasons, markers of important events like when smoking or drying meat is finished, same for tanning, retting, drying nettles.
