@@ -95,8 +95,7 @@ tally_stats = {
 
 # Setup screen
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption('Week-Based Game Calendar UI')
-clock = pygame.time.Clock()
+pygame.display.set_caption('Unreal World Calendar')
 
 # Layout for weekly columns
 box_width = 27
@@ -278,6 +277,8 @@ def parse_log():
   tanning = state.get('tanning_processes', [])
   cooking = state.get('cooking_processes', [])
   textile = state.get('textile_processes', [])
+  settlements = state.get('settlements',{})
+  markers = state.get('markers',{})
   tanning_outcomes = state.get('tanning_outcomes', {})
   building_counts = state.get('buildings', {})
 
@@ -349,9 +350,20 @@ def parse_log():
           progress['chores']['Feed Animals']['done'] = True
           break
         #probably tried to go beyond last line
+    elif 'You are entering ' in msg:
+      s = msg[msg.find('You are entering'):]
+      s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ä
+
+      key = f'{x}:{y}'
+      if key not in settlements:
+        settlements[key] = s
+    elif 'You see a marked location' in msg:
+      text = msg.split('\"')
+      key = f'{x}:{y}'
+      if key not in markers:
+        markers[key] = text[1]
     elif msg == 'Ok. You finish the current building job.':
       # look back to find last building name
-      prev_line = lines[max(1,i-j)]
       for j in range(1, 20):
         prev_line = lines[max(1,i-j)]
         if 'BUILDING OPTIONS:' in prev_line:
@@ -490,6 +502,8 @@ def parse_log():
       'sacrifices': sacrifices,
       'kills': kills,
       'meat_cuts': meat_cuts,
+      'settlements': settlements,
+      'markers':markers,
       'tanning_processes': tanning,
       'cooking_processes': cooking,
       'textile_processes':textile,
@@ -792,5 +806,5 @@ while True:
     schedule_y = week_y + week_height + 10
     Draw_Weekly_Calendar(screen, schedule_x, schedule_y, weekly_events, current_weekday, current_timestamp['hour'])
 
+
     pygame.display.flip()
-  clock.tick(FPS)
