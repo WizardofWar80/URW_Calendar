@@ -16,6 +16,9 @@ Lastly there is a tally of all your kills.
 
 The script should be placed in the savegame folder that you want to monitor while playing and can be started at any time.
 
+The chore 'Make Fire' is for smoking meat, so it checks if you have meat smoking going on, and then when you make a fire, it looks for you standing on prepared smoking meat to count. It wont just count any random fire you make.
+The chore 'Feed Animals' checks if you have named a dog, and if so, the chore becomes active. You need to tell the dog to eat, and it looks for the happy looks message from your dog to count successful feeding.
+
 The script reads the message log and keeps track of information in a seperate file, because the message log 'forgets' older stuff.
 
 Right now I am playing on version 3.85, so this has not been tested with the newer versions yet.
