@@ -263,7 +263,7 @@ class URL_Calendar():
 
       if 'You are entering ' in msg:
         s = msg[msg.find('You are entering'):]
-        s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ä
+        s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with Ã¤
 
         key = f'{x}:{y}'
         if key not in settlements:
@@ -739,7 +739,7 @@ SEASON_COLORS = {
     'winter': (224, 224, 224),
 }
 
-LOG_FILE = 'e:\\SteamLibrary\\steamapps\\common\\UnRealWorld\\AMOS\\msglog.txt'
+LOG_FILE = 'msglog.txt'
 STATE_FILE = 'state.json'
 PROGRESS_FILE = 'progress.json'
 
