@@ -23,14 +23,16 @@ class URL_Calendar():
     self.todays_events = {}
     self.weekly_events = {}
     self.tally_stats = {}
-    
+    self.temp_village_content = []
     self.logfile_changed_ts = None
     self.current_timestamp = None
     self.current_weekday = None
     self.new_state = None
     self.progress = None
     self.has_dog = False
-
+    self.in_settlement = False
+    self.current_settlement_key = None
+    self.village_goods = {}
     # Setup screen
     self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption('Unreal World Calendar')
@@ -186,6 +188,9 @@ class URL_Calendar():
     if 'chores' in self.progress:
       if ('Feed Animals' in self.progress['chores']):
         self.has_dog = self.progress['chores']['Feed Animals']['needed']
+    if 'temp settlement' in self.progress:
+      self.temp_village_content = self.progress['temp settlement']['content']
+      self.current_settlement_key = self.progress['temp settlement']['key']
     if (DEBUG):
       print(self.progress)
       print(self.current_timestamp)
@@ -200,6 +205,7 @@ class URL_Calendar():
     textile = self.state.get('textile_processes', [])
     settlements = self.state.get('settlements',{})
     markers = self.state.get('markers',{})
+    self.village_goods = self.state.get('village_goods',{})
     tanning_outcomes = self.state.get('tanning_outcomes', {})
     building_counts = self.state.get('buildings', {})
 
@@ -266,8 +272,18 @@ class URL_Calendar():
         s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ä
 
         key = f'{x}:{y}'
+        self.current_settlement_key = key
         if key not in settlements:
           settlements[key] = s
+        self.temp_village_content = []
+        self.in_settlement = True
+      elif 'Zooming out ...' in msg:
+        if (self.in_settlement):
+          self.in_settlement = False
+          if not self.current_settlement_key:
+            self.current_settlement_key = f'{x}:{y}'
+          self.Tally_Village_Goods(self.current_settlement_key)
+          self.current_settlement_key = None
       elif 'You see a marked location' in msg:
         text = msg.split('\"')
         key = f'{x}:{y}'
@@ -330,11 +346,17 @@ class URL_Calendar():
         self.Parse_long_process(lines, i, msg, textile, 'Retting')
       elif 'The retted nettles are now set in loose bundles to dry out fully, after which you can proceed with extracting the fibre.' in msg:
         self.Parse_long_process(lines, i, msg, textile, 'Drying Nettles')
-        
+      elif self.in_settlement:
+        if 'Things that are here:' in msg or 'There are several objects here:' in msg:
+          self.Parse_Items_On_Ground(lines, i)
+
       i += 1
       last_ts = ts
     self.progress['last_ts'] = ts
     self.progress['repeats'] = repeating_timestamps
+    self.progress['temp settlement']={}
+    self.progress['temp settlement']['content'] = self.temp_village_content
+    self.progress['temp settlement']['key'] = self.current_settlement_key
 
     # save new state
     tanning_outcomes = dict(sorted(tanning_outcomes.items()))
@@ -352,7 +374,8 @@ class URL_Calendar():
         'cooking_processes': cooking,
         'textile_processes':textile,
         'tanning_outcomes': tanning_outcomes,
-        'buildings': building_counts
+        'buildings': building_counts,
+        'village_goods':self.village_goods
     }
 
     self.Save_json(STATE_FILE, self.new_state)
@@ -386,8 +409,8 @@ class URL_Calendar():
     self.event_markers = {}
     self.todays_events = {}
     self.weekly_events = defaultdict(list)
-    #current_timestamp['day']=26 # debug specific dates
-    #current_timestamp['month']=8 # debug specific dates
+    #self.current_timestamp['day']=21 # debug specific dates
+    #self.current_timestamp['month']=8 # debug specific dates
 
     calendar_day_today = self.ConvertToCalendarDay(self.current_timestamp['day'], self.current_timestamp['month'])
     self.current_weekday = self.ConvertCalendarDay2WeekDay(calendar_day_today)
@@ -516,7 +539,6 @@ class URL_Calendar():
   def Parse_long_process(self, lines, i, msg, item, process_type, amount=None):
     for j in range(i+1, min(i+4, len(lines))):
       if 'should be complete' in lines[j]:
-        #end_date = msg.split('[')[-1].split(']')[0]
         m = re.search(r'after (\d+) days', lines[j])
         if m:
           duration = int(m.group(1))
@@ -540,7 +562,7 @@ class URL_Calendar():
     if self.current_timestamp:
       start_date = self.current_timestamp.copy()
       end_date = self.current_timestamp.copy()
-      end_date_text = msg.split('[')[-1].split(']')[0]
+      end_date_text = msg.split('.')[0]
       if ('a few hours' in end_date_text):
         end_date['hour'] +=2
         if (end_date['hour'] > 23):
@@ -557,8 +579,56 @@ class URL_Calendar():
       item.append({
           'start': self.To_str_date(self.current_timestamp),
           'end': self.To_str_date(end_date),
-          'timeframe': msg.split('[')[-1].split(']')[0]
+          'timeframe': end_date_text
       })
+
+  def Parse_Items_On_Ground(self, lines, i):
+    items = []
+    for j in range(i+1, min(i+100, len(lines))):
+      line = lines[j]
+      if (line.startswith('(000000)')): # when the color is not black, its not an item on the ground
+        match = re.search(r"\[(.*?)\]", line)
+        if match:
+          hotkey = match.group(1)
+          if (hotkey.isupper()): # Uppercase letters indicate things that are not laying on ground, but are rather persons or building types
+            break
+        if ('called' in line): # dont count your named animal
+          break
+        items.append(line.split('| ')[1].strip())
+      else:
+        break
+
+    if items in self.temp_village_content:
+      # don't count the same tiles multiple times
+      # still an issue if you pick something up, it then it counts the rest twice...
+      # too lazy to subtract stuff that gets picked up from the tiles contents
+      pass
+    else:
+      self.temp_village_content.append(items)
+
+  def Tally_Village_Goods(self, key):
+    temp_village_goods = {}
+    num_items = 0
+    for tile_contents in self.temp_village_content:
+      for item in tile_contents:
+        tokens = item.split(' ')
+        try:
+          number = int(tokens[0])
+          item = item.replace(tokens[0]+' ', '')
+          if item.endswith('s'):
+            item = item[:-1]
+        except:
+          number = 1
+        num_items+=1
+        if item in temp_village_goods:
+          temp_village_goods[item] += number
+        else:
+          temp_village_goods[item] = number
+    # maybe find a better way to handle visits to villages without looking at all items and not overwrite everything
+    if (num_items > 0):
+      self.village_goods[key] = temp_village_goods
+
+    self.temp_village_content = []
 
   def Format_hour(self, hour):
     suffix = 'AM' if hour < 12 else 'PM'
