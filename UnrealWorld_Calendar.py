@@ -51,7 +51,7 @@ class URL_Calendar():
     self.calendar_year_y = 20
 
   # Assign season by day index
-  def Get_season(self, day_number):
+  def Get_Season(self, day_number):
     week = (day_number - 1) // 7 + 1
     day_of_week = (day_number - 1) % 7 + 1
     if week < 12 or (week == 12 and day_of_week == 1):
@@ -65,7 +65,7 @@ class URL_Calendar():
     else:
       return 'winter'
 
-  def Parse_timestamp(self, ts):
+  def Parse_Timestamp(self, ts):
       if len(ts) != 4:
         print('timstamp has wrong length: \'%s\''%ts)
         return None
@@ -79,7 +79,7 @@ class URL_Calendar():
           print ('error parsing timestamp: \'%s\''%ts)
           return None
 
-  def CheckDateIsBeforeOrAfter(self, date_to_check, check_against):
+  def Check_Date_Is_Before_Or_After(self, date_to_check, check_against):
     if (date_to_check[2] < check_against[2]):
       # this year is before check year
       return BEFORE
@@ -107,10 +107,27 @@ class URL_Calendar():
                     return EQUAL
     return AFTER
 
-  def Game_date_to_datetime(self, gd):
+  def Check_Date_Is_Between(self, date_to_check, start_date, end_date, inclusive = 0):
+    after_first = False
+    before_last = False
+    if (inclusive == NONE) or (inclusive == SECOND):
+      if (self.Check_Date_Is_Before_Or_After(date_to_check, start_date) == AFTER):
+        after_first = True
+    else:
+      if (self.Check_Date_Is_Before_Or_After(date_to_check, start_date) != BEFORE): # could be equal or after
+        after_first = True
+    if (inclusive == NONE) or (inclusive == FIRST):
+      if (self.Check_Date_Is_Before_Or_After(date_to_check, end_date) == BEFORE):
+        before_last = True
+    else:
+      if (self.Check_Date_Is_Before_Or_After(date_to_check, end_date) != AFTER): # could be equal or before
+        before_last = True
+    return (after_first and before_last)
+
+  def Game_Date_To_Datetime(self, gd):
     return '%d.%d.%d %d'%(gd['day'], gd['month'], gd['year'], gd['hour'])
 
-  def Add_game_days(self, start, days):
+  def Add_Game_Days(self, start, days):
       result = start.copy()
       for _ in range(days):
           result['day'] += 1
@@ -122,20 +139,20 @@ class URL_Calendar():
                   result['year'] += 1
       return result
 
-  def To_str_date(self, gd):
-    return self.Game_date_to_datetime(gd)
+  def To_Str_Date(self, gd):
+    return self.Game_Date_To_Datetime(gd)
 
-  def Str_date_to_array(self, date_str):
+  def Str_Date_To_Array(self, date_str):
     parts = date_str.replace('.', ' ').split()
     return list(map(int, parts))
 
-  def ConvertToCalendarDay(self, day, month):
+  def Convert_To_Calendar_Day(self, day, month):
     calendar_day = day
     for i in range(1, month):
       calendar_day+=days_per_month[i]
     return calendar_day
 
-  def ConvertFromCalendarDay(self, calendar_day, year, hour = 0):
+  def Convert_From_Calendar_Day(self, calendar_day, year, hour = 0):
     day = calendar_day
     month = 1
     for i in range(1,13):
@@ -146,23 +163,23 @@ class URL_Calendar():
         break
     return {'day': day, 'month': month, 'year': year, 'hour': hour}
 
-  def ConvertCalendarDay2WeekDay(self, calendar_day):
+  def Convert_Calendar_Day_2_Week_Day(self, calendar_day):
     weekday = calendar_day%7
     if weekday == 0:
       weekday = 7
     return weekday
 
-  def Load_json(self, path):
+  def Load_Json(self, path):
       if not os.path.exists(path):
           return {}
       with open(path, 'r') as f:
           return json.load(f)
 
-  def Save_json(self, path, data):
+  def Save_Json(self, path, data):
       with open(path, 'w') as f:
           json.dump(data, f, indent=2)
 
-  def File_has_changed(self):
+  def File_Has_Changed(self):
     if not self.logfile_changed_ts:
       self.logfile_changed_ts = os.path.getmtime(LOG_FILE)
       return True
@@ -173,16 +190,16 @@ class URL_Calendar():
         return True
     return False
 
-  def Parse_log(self):
-    self.state = self.Load_json(STATE_FILE)
-    self.progress = self.Load_json(PROGRESS_FILE)
+  def Parse_Log(self):
+    self.state = self.Load_Json(STATE_FILE)
+    self.progress = self.Load_Json(PROGRESS_FILE)
     x = 0
     y = 0
     if 'last_ts' not in self.progress:
       print('New file being created')
       self.progress['last_ts'] = '0000'
     else:
-      self.current_timestamp = self.Parse_timestamp(self.progress['last_ts'])
+      self.current_timestamp = self.Parse_Timestamp(self.progress['last_ts'])
     if 'repeats' not in self.progress:
       self.progress['repeats'] = 0
     if 'chores' in self.progress:
@@ -233,15 +250,15 @@ class URL_Calendar():
       else:
         repeating_timestamps = 0
       last_ts = ts
-      if (self.CheckDateIsBeforeOrAfter(ts, self.progress['last_ts']) == BEFORE):
+      if (self.Check_Date_Is_Before_Or_After(ts, self.progress['last_ts']) == BEFORE):
         i += 1
         continue
       else:
-        if(self.CheckDateIsBeforeOrAfter(ts, self.progress['last_ts']) == EQUAL) and (repeating_timestamps <= self.progress['repeats']):
+        if(self.Check_Date_Is_Before_Or_After(ts, self.progress['last_ts']) == EQUAL) and (repeating_timestamps <= self.progress['repeats']):
           i += 1
           continue
 
-      new_ts = self.Parse_timestamp(ts)
+      new_ts = self.Parse_Timestamp(ts)
       if (not self.current_timestamp) or (new_ts['day'] != self.current_timestamp['day']):
         self.new_day = True
         self.progress['chores'] = {'Make Fire':{'needed':False, 'done':False},
@@ -256,16 +273,16 @@ class URL_Calendar():
       if msg == 'ANIMAL COMMANDS: Dog: I shall name you...':
         self.has_dog = True
 
-      trees_felled= self.Look_for_tally_items('The tree falls down.',       msg, trees_felled)
-      sacrifices  = self.Look_for_tally_items('sacrifice',                  msg, sacrifices)
-      fires_made  = self.Look_for_tally_items('You managed to make a fire', msg, fires_made)
+      trees_felled= self.Look_For_Tally_Items('The tree falls down.',       msg, trees_felled)
+      sacrifices  = self.Look_For_Tally_Items('sacrifice',                  msg, sacrifices)
+      fires_made  = self.Look_For_Tally_Items('You managed to make a fire', msg, fires_made)
 
 
-      self.Look_for_chores(['sacrifice'], lines,i, msg, self.progress['chores']['Sacrifice'])
-      self.Look_for_chores(['You managed to make a fire','smoked','(being prepared)'], lines,i, msg, self.progress['chores']['Make Fire'], multiline = True, backwards=True, search_area=25)
-      self.Look_for_chores(['Using: WEATHERLORE'], lines,i, msg, self.progress['chores']['Weatherlore'])
-      self.Look_for_chores(['You do not recognize what','You have learned something new about','You do know that'], lines,i, msg, self.progress['chores']['Herblore'],operator_and = False)
-      self.Look_for_chores(['Eat now','gives you a happy look.'], lines,i, msg, self.progress['chores']['Feed Animals'], multiline = True)
+      self.Look_For_Chores(['sacrifice'], lines,i, msg, self.progress['chores']['Sacrifice'])
+      self.Look_For_Chores(['You managed to make a fire','smoked','(being prepared)'], lines,i, msg, self.progress['chores']['Make Fire'], multiline = True, backwards=True, search_area=25)
+      self.Look_For_Chores(['Using: WEATHERLORE'], lines,i, msg, self.progress['chores']['Weatherlore'])
+      self.Look_For_Chores(['You do not recognize what','You have learned something new about','You do know that'], lines,i, msg, self.progress['chores']['Herblore'],operator_and = False)
+      self.Look_For_Chores(['Eat now','gives you a happy look.'], lines,i, msg, self.progress['chores']['Feed Animals'], multiline = True)
 
       if 'You are entering ' in msg:
         s = msg[msg.find('You are entering'):]
@@ -330,7 +347,7 @@ class URL_Calendar():
           tanning_outcomes[key] = tanning_outcomes.get(key, 0) + 1
       # Processes
       elif 'tanning the skin' in msg:
-        self.Parse_short_process(msg, tanning)
+        self.Parse_Short_Process(msg, tanning)
       elif 'Ok, you leave' in msg and 'to cook and prepare' in msg:
         cooking_type = ''
         if 'dried' in msg:
@@ -341,11 +358,11 @@ class URL_Calendar():
           cooking_type = 'Roasting'
           i += 1
         amount_type = msg.split('leave')[-1].split('to cook')[0].strip()
-        self.Parse_long_process(lines, i, msg, cooking, cooking_type, amount_type)
+        self.Parse_Long_Process(lines, i, msg, cooking, cooking_type, amount_type)
       elif 'You leave the nettles to soak in the water, after which they are properly retted.' in msg:
-        self.Parse_long_process(lines, i, msg, textile, 'Retting')
+        self.Parse_Long_Process(lines, i, msg, textile, 'Retting')
       elif 'The retted nettles are now set in loose bundles to dry out fully, after which you can proceed with extracting the fibre.' in msg:
-        self.Parse_long_process(lines, i, msg, textile, 'Drying Nettles')
+        self.Parse_Long_Process(lines, i, msg, textile, 'Drying Nettles')
       elif self.in_settlement:
         if 'Things that are here:' in msg or 'There are several objects here:' in msg:
           self.Parse_Items_On_Ground(lines, i)
@@ -378,8 +395,8 @@ class URL_Calendar():
         'village_goods':self.village_goods
     }
 
-    self.Save_json(STATE_FILE, self.new_state)
-    self.Save_json(PROGRESS_FILE, self.progress)
+    self.Save_Json(STATE_FILE, self.new_state)
+    self.Save_Json(PROGRESS_FILE, self.progress)
     
     if (x != self.last_x) or (y != self.last_y):
       print('Map coordinate: ',x,y)
@@ -409,105 +426,97 @@ class URL_Calendar():
     self.event_markers = {}
     self.todays_events = {}
     self.weekly_events = defaultdict(list)
-    #self.current_timestamp['day']=21 # debug specific dates
-    #self.current_timestamp['month']=8 # debug specific dates
+    self.current_timestamp['day']=21 # debug specific dates
+    self.current_timestamp['month']=8 # debug specific dates
 
-    calendar_day_today = self.ConvertToCalendarDay(self.current_timestamp['day'], self.current_timestamp['month'])
-    self.current_weekday = self.ConvertCalendarDay2WeekDay(calendar_day_today)
+    calendar_day_today = self.Convert_To_Calendar_Day(self.current_timestamp['day'], self.current_timestamp['month'])
+    self.current_weekday = self.Convert_Calendar_Day_2_Week_Day(calendar_day_today)
     calendar_day_start_of_week = calendar_day_today - self.current_weekday + 1
-    date_week_start = self.ConvertFromCalendarDay(calendar_day_start_of_week, self.current_timestamp['year'], 0)
-    date_week_end = self.ConvertFromCalendarDay(calendar_day_start_of_week+7, self.current_timestamp['year'], 0)
+    date_week_start = self.Convert_From_Calendar_Day(calendar_day_start_of_week, self.current_timestamp['year'], 0)
+    date_week_end = self.Convert_From_Calendar_Day(calendar_day_start_of_week+7, self.current_timestamp['year'], 0)
     this_weeK_array = [date_week_start['day'],date_week_start['month'],date_week_start['year'],0]
     this_weeK_array2 = [date_week_end['day'],date_week_end['month'],date_week_end['year'],0]
 
     today = [self.current_timestamp['day'],self.current_timestamp['month'],self.current_timestamp['year'],0]
-    tomorrow_ = self.Add_game_days(self.current_timestamp, 0)
+    tomorrow_ = self.Add_Game_Days(self.current_timestamp, 0)
     tomorrow = [tomorrow_['day'],tomorrow_['month'],tomorrow_['year'],0]
     if 'cooking_processes' in self.new_state:
       this_year = [1,1,self.current_timestamp['year'],0]
       next_year = [1,1,self.current_timestamp['year']+1,0]
       for o in self.new_state['cooking_processes']:
-        cooking_end_date = self.Str_date_to_array(o['end'])
-        cooking_start_date = self.Str_date_to_array(o['start'])
-        cal_day = self.ConvertToCalendarDay(cooking_end_date[0], cooking_end_date[1])
-        if (self.CheckDateIsBeforeOrAfter(cooking_end_date, this_year) != BEFORE):
-          if (self.CheckDateIsBeforeOrAfter(cooking_end_date, next_year) == BEFORE):
-            if o['type'] == 'Drying Food':
-              self.Add_Event(cal_day, 'D')
-            elif o['type'] == 'Smoking':
-              self.Add_Event(cal_day, 'S')
-              if (self.CheckDateIsBeforeOrAfter(cooking_start_date, this_weeK_array2) == BEFORE):
-                if (self.CheckDateIsBeforeOrAfter(cooking_end_date, this_weeK_array) == AFTER):
-                  s = 1
-                  e = 8
-                  if (self.CheckDateIsBeforeOrAfter(cooking_start_date, this_weeK_array) == AFTER):
-                    cooking_start_calenderday = self.ConvertToCalendarDay(cooking_start_date[0], cooking_start_date[1])
-                    cooking_start_weekday = self.ConvertCalendarDay2WeekDay(cooking_start_calenderday)
-                    s = cooking_start_weekday
-                  if (self.CheckDateIsBeforeOrAfter(cooking_end_date, this_weeK_array2) == BEFORE):
-                    cooking_end_calenderday = self.ConvertToCalendarDay(cooking_end_date[0], cooking_end_date[1])
-                    cooking_end_weekday = self.ConvertCalendarDay2WeekDay(cooking_end_calenderday)
-                    e = cooking_end_weekday+1
-                  for d in range(s, e):
-                    self.weekly_events[(d, 5)].append('Make Fire')
-                  if (self.current_weekday >= s and self.current_weekday <= e):
-                    self.progress['chores']['Make Fire']['needed'] = True
-
-        if (self.CheckDateIsBeforeOrAfter(cooking_end_date, this_weeK_array) != BEFORE):
-          if (self.CheckDateIsBeforeOrAfter(cooking_end_date, this_weeK_array2) == BEFORE):
-            d_w = self.ConvertCalendarDay2WeekDay(self.ConvertToCalendarDay(cooking_end_date[0], cooking_end_date[1]))
-            if o['type'] == 'Drying Food':
-              self.weekly_events[(d_w, cooking_end_date[3])].append('Drying')
-            elif o['type'] == 'Smoking':
-              self.weekly_events[(d_w, cooking_end_date[3])].append('Smoking')
+        cooking_end_date = self.Str_Date_To_Array(o['end'])
+        cooking_start_date = self.Str_Date_To_Array(o['start'])
+        cal_day = self.Convert_To_Calendar_Day(cooking_end_date[0], cooking_end_date[1])
+        if (self.Check_Date_Is_Between(cooking_end_date, this_year, next_year, inclusive = FIRST)):
+          if o['type'] == 'Drying Food':
+            self.Add_Event(cal_day, 'D')
+          elif o['type'] == 'Smoking':
+            self.Add_Event(cal_day, 'S')
+            if (self.Check_Date_Is_Between(cooking_start_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
+              s = 1
+              e = 8
+              if (self.Check_Date_Is_Before_Or_After(cooking_start_date, this_weeK_array) == AFTER):
+                cooking_start_calenderday = self.Convert_To_Calendar_Day(cooking_start_date[0], cooking_start_date[1])
+                cooking_start_weekday = self.Convert_Calendar_Day_2_Week_Day(cooking_start_calenderday)
+                s = cooking_start_weekday
+              if (self.Check_Date_Is_Before_Or_After(cooking_end_date, this_weeK_array2) == BEFORE):
+                cooking_end_calenderday = self.Convert_To_Calendar_Day(cooking_end_date[0], cooking_end_date[1])
+                cooking_end_weekday = self.Convert_Calendar_Day_2_Week_Day(cooking_end_calenderday)
+                e = cooking_end_weekday+1
+              for d in range(s, e):
+                self.weekly_events[(d, 5)].append('Make Fire')
+              if (self.current_weekday >= s and self.current_weekday <= e):
+                self.progress['chores']['Make Fire']['needed'] = True
+        if (self.Check_Date_Is_Between(cooking_end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
+          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(cooking_end_date[0], cooking_end_date[1]))
+          if o['type'] == 'Drying Food':
+            self.weekly_events[(d_w, cooking_end_date[3])].append('Drying')
+          elif o['type'] == 'Smoking':
+            self.weekly_events[(d_w, cooking_end_date[3])].append('Smoking')
 
         if (cal_day == calendar_day_today):
-          if (self.CheckDateIsBeforeOrAfter(cooking_end_date, tomorrow) == BEFORE):
+          if (self.Check_Date_Is_Before_Or_After(cooking_end_date, tomorrow) == BEFORE):
             self.todays_events[cooking_end_date[3]] = o['amount']
 
     if 'tanning_processes' in self.new_state:
       this_year = [1,1,self.current_timestamp['year'],0]
       next_year = [1,1,self.current_timestamp['year']+1,0]
       for t in self.new_state['tanning_processes']:
-        tanning_end_date = self.Str_date_to_array(t['end'])
-        cal_day = self.ConvertToCalendarDay(tanning_end_date[0], tanning_end_date[1])
-        if (self.CheckDateIsBeforeOrAfter(tanning_end_date, this_year) != BEFORE):
-          if (self.CheckDateIsBeforeOrAfter(tanning_end_date, next_year) == BEFORE):
-            self.Add_Event(cal_day, 'T')
+        tanning_end_date = self.Str_Date_To_Array(t['end'])
+        cal_day = self.Convert_To_Calendar_Day(tanning_end_date[0], tanning_end_date[1])
+        if (self.Check_Date_Is_Between(tanning_end_date, this_year, next_year, inclusive = FIRST)):
+          self.Add_Event(cal_day, 'T')
         if (cal_day == calendar_day_today):
-          if (self.CheckDateIsBeforeOrAfter(tanning_end_date, tomorrow) == BEFORE):
+          if (self.Check_Date_Is_Before_Or_After(tanning_end_date, tomorrow) == BEFORE):
             self.todays_events[tanning_end_date[3]] = 'tanning'
-        if (self.CheckDateIsBeforeOrAfter(tanning_end_date, this_weeK_array) != BEFORE):
-          if (self.CheckDateIsBeforeOrAfter(tanning_end_date, this_weeK_array2) == BEFORE):
-            d_w = self.ConvertCalendarDay2WeekDay(self.ConvertToCalendarDay(tanning_end_date[0], tanning_end_date[1]))
-            self.weekly_events[(d_w, tanning_end_date[3])].append('Tanning')
+        if (self.Check_Date_Is_Between(tanning_end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
+          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(tanning_end_date[0], tanning_end_date[1]))
+          self.weekly_events[(d_w, tanning_end_date[3])].append('Tanning')
 
     if 'textile_processes' in self.new_state:
       this_year = [1,1,self.current_timestamp['year'],0]
       next_year = [1,1,self.current_timestamp['year']+1,0]
       for t in self.new_state['textile_processes']:
-        end_date = self.Str_date_to_array(t['end'])
-        cal_day = self.ConvertToCalendarDay(end_date[0], end_date[1])
-        if (self.CheckDateIsBeforeOrAfter(end_date, this_year) != BEFORE):
-          if (self.CheckDateIsBeforeOrAfter(end_date, next_year) == BEFORE):
-            if (t['type'] == 'Retting'):
-              self.Add_Event(cal_day, 'R')
-            elif (t['type'] == 'Drying Nettles'):
-              self.Add_Event(cal_day, 'd')
+        end_date = self.Str_Date_To_Array(t['end'])
+        cal_day = self.Convert_To_Calendar_Day(end_date[0], end_date[1])
+        if (self.Check_Date_Is_Between(end_date, this_year, next_year, inclusive = FIRST)):
+          if (t['type'] == 'Retting'):
+            self.Add_Event(cal_day, 'R')
+          elif (t['type'] == 'Drying Nettles'):
+            self.Add_Event(cal_day, 'd')
         if (cal_day == calendar_day_today):
-          if (self.CheckDateIsBeforeOrAfter(end_date, tomorrow) == BEFORE):
+          if (self.Check_Date_Is_Before_Or_After(end_date, tomorrow) == BEFORE):
             self.todays_events[end_date[3]] = t['type']
-        if (self.CheckDateIsBeforeOrAfter(end_date, this_weeK_array) != BEFORE):
-          if (self.CheckDateIsBeforeOrAfter(end_date, this_weeK_array2) == BEFORE):
-            d_w = self.ConvertCalendarDay2WeekDay(self.ConvertToCalendarDay(end_date[0], end_date[1]))
-            self.weekly_events[(d_w, end_date[3])].append(t['type'])
+        if (self.Check_Date_Is_Between(end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
+          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(end_date[0], end_date[1]))
+          self.weekly_events[(d_w, end_date[3])].append(t['type'])
 
-  def Look_for_tally_items(self, search_string,msg,  tally_var):
+  def Look_For_Tally_Items(self, search_string,msg,  tally_var):
     if search_string in msg:
       tally_var += 1
     return tally_var
 
-  def Look_for_chores(self,search_strings,  lines, i, msg, chore_var, multiline = False, backwards = False, search_area = 5, operator_and = True):
+  def Look_For_Chores(self,search_strings,  lines, i, msg, chore_var, multiline = False, backwards = False, search_area = 5, operator_and = True):
     if (multiline):
       if search_strings[0] in msg:
         count_matches = 1
@@ -536,7 +545,7 @@ class URL_Calendar():
       elif count_matches > 0 and operator_and == False:
         chore_var['done'] = True
 
-  def Parse_long_process(self, lines, i, msg, item, process_type, amount=None):
+  def Parse_Long_Process(self, lines, i, msg, item, process_type, amount=None):
     for j in range(i+1, min(i+4, len(lines))):
       if 'should be complete' in lines[j]:
         m = re.search(r'after (\d+) days', lines[j])
@@ -547,18 +556,18 @@ class URL_Calendar():
               item.append({
                 'type': process_type,
                 'amount': amount,
-                'start': self.To_str_date(self.current_timestamp),
-                'end': self.To_str_date(self.Add_game_days(self.current_timestamp, duration))
+                'start': self.To_Str_Date(self.current_timestamp),
+                'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
               })
             else:
               item.append({
                 'type': process_type,
-                'start': self.To_str_date(self.current_timestamp),
-                'end': self.To_str_date(self.Add_game_days(self.current_timestamp, duration))
+                'start': self.To_Str_Date(self.current_timestamp),
+                'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
               })
             break
 
-  def Parse_short_process(self, msg, item):
+  def Parse_Short_Process(self, msg, item):
     if self.current_timestamp:
       start_date = self.current_timestamp.copy()
       end_date = self.current_timestamp.copy()
@@ -566,7 +575,7 @@ class URL_Calendar():
       if ('a few hours' in end_date_text):
         end_date['hour'] +=2
         if (end_date['hour'] > 23):
-          end_date = self.Add_game_days(end_date,1)
+          end_date = self.Add_Game_Days(end_date,1)
           end_date['hour'] = end_date['hour']-24
       elif 'This step is complete by ' in msg:
         time = msg[msg.find(' by ')+4:msg.find('.')]
@@ -574,11 +583,11 @@ class URL_Calendar():
           if time.strip() == string_timeofday[h].lower():
             break
         if h < start_date['hour']:
-          end_date = self.Add_game_days(end_date,1)
+          end_date = self.Add_Game_Days(end_date,1)
         end_date['hour'] = h
       item.append({
-          'start': self.To_str_date(self.current_timestamp),
-          'end': self.To_str_date(end_date),
+          'start': self.To_Str_Date(self.current_timestamp),
+          'end': self.To_Str_Date(end_date),
           'timeframe': end_date_text
       })
 
@@ -630,7 +639,7 @@ class URL_Calendar():
 
     self.temp_village_content = []
 
-  def Format_hour(self, hour):
+  def Format_Hour(self, hour):
     suffix = 'AM' if hour < 12 else 'PM'
     display_hour = hour % 12
     if display_hour == 0:
@@ -660,7 +669,7 @@ class URL_Calendar():
       y = MARGIN_Y + HEADER_HEIGHT + j * HOUR_HEIGHT
 
       # Right-aligned time label
-      label = self.font_wk_cal.render(self.Format_hour(hour), True, HOUR_LABEL_COLOR)
+      label = self.font_wk_cal.render(self.Format_Hour(hour), True, HOUR_LABEL_COLOR)
       label_rect = label.get_rect(right=MARGIN_X - 5, centery=y)
       calendar_surface.blit(label, label_rect)
       if (hour < 24):
@@ -714,7 +723,7 @@ class URL_Calendar():
         rect = pygame.Rect(week_x, box_y, box_width, box_height)
               
         # Fill each box by season
-        season = self.Get_season(day_number)
+        season = self.Get_Season(day_number)
         pygame.draw.rect(self.screen, SEASON_COLORS[season], rect)
         w = 1
         drawing_date = self.Convert_Weekday_to_Day_Month(d, week, 1, 1)
@@ -837,6 +846,10 @@ display_weeks = 52
 BEFORE = -1
 EQUAL = 0
 AFTER = 1
+NONE = 0
+FIRST = 1
+SECOND = 2
+BOTH = 3
 
 CAL_WIDTH, CAL_HEIGHT = 730, 500
 
@@ -870,10 +883,11 @@ def main():
         pygame.quit()
         sys.exit()
 
-    if (game.File_has_changed()):
-      game.Parse_log()
+    if (game.File_Has_Changed()):
+      game.Parse_Log()
       game.Fill_Events()
       game.Draw()
+    time.sleep(0.050)
 
 if __name__=="__main__":
   # call the main function
