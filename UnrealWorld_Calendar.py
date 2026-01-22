@@ -5,7 +5,14 @@ import os
 import re
 import json
 import time
+import csv
+from pathlib import Path
+import numpy as np
 from collections import defaultdict
+
+# Todo:
+# Add custom marker for quests
+# Add custom marker for blacksmith timing
 
 pygame.init()
 
@@ -33,6 +40,16 @@ class URL_Calendar():
     self.in_settlement = False
     self.current_settlement_key = None
     self.village_goods = {}
+    self.fow = set()
+    self.zoom_level = 4
+    self.map_width = 550
+    self.map_height = 500
+    self.map_surface = None
+    self.fog_surface = None
+    self.map_rect = None
+    self.no_tiles = True
+    self.map_tiles = [2730, 2048]
+    self.tiles_sizes = [[0,0],[1.125,1.25], [2.25,2.5],[4.5,5],[9,10],[18,20]]
     # Setup screen
     self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption('Unreal World Calendar')
@@ -179,6 +196,236 @@ class URL_Calendar():
       with open(path, 'w') as f:
           json.dump(data, f, indent=2)
 
+  def WorldCoord2ImgPixel(self, x_world, y_world, zoom):
+    pixel_x = x_world * self.tiles_sizes[zoom][0]
+    pixel_y = y_world * self.tiles_sizes[zoom][1]
+
+    return (pixel_x, pixel_y)
+
+  def WorldCoord2Chunk(self, world_x, world_y, zoom):
+    chunk_x = world_x * self.tiles_sizes[zoom][0] / 512
+    chunk_y = world_y * self.tiles_sizes[zoom][1] / 512
+
+    return chunk_x, chunk_y
+
+  def Chunk2WorldCoord(self, chunk_x, chunk_y, zoom):
+    world_x = chunk_x * 512 / self.tiles_sizes[zoom][0]
+    world_y = chunk_y * 512 / self.tiles_sizes[zoom][1]
+
+    return world_x, world_y
+
+  def Chunk2ImgPixel(self, chunk_x, chunk_y, zoom):
+    pixel_x = chunk_x*512
+    pixel_y = chunk_y*512
+
+    return pixel_x, pixel_y
+
+  def CreateMap(self, coordinates):
+    tile_w = self.tiles_sizes[self.zoom_level][0]
+    tile_h = self.tiles_sizes[self.zoom_level][1]
+    chunk_x_frac, chunk_y_frac = self.WorldCoord2Chunk(coordinates[0], coordinates[1], self.zoom_level)
+
+    chunk_anchor = (0,0)
+    world_anchor = (0,0)
+
+    chunk_x = int(chunk_x_frac)
+    chunk_y = int(chunk_y_frac)
+
+    x_perc = chunk_x_frac - chunk_x
+    y_perc = chunk_y_frac - chunk_y
+
+    print ('tile-%d-%d-%d.png'%(chunk_x,chunk_y, self.zoom_level))
+
+    neighbor = []
+    if x_perc <= 0.5:
+      x_neighbor = chunk_x-1
+    else:
+      x_neighbor = chunk_x+1
+    if y_perc <= 0.5:
+      y_neighbor = chunk_y-1
+    else:
+      y_neighbor = chunk_y+1
+
+    tile_files = {}
+    tile_files['topleft']  = 'tile-%d-%d-%d.png'%(min(chunk_x, x_neighbor),min(chunk_y, y_neighbor),self.zoom_level)
+    tile_files['topright'] = 'tile-%d-%d-%d.png'%(max(chunk_x, x_neighbor),min(chunk_y, y_neighbor),self.zoom_level)
+    tile_files['botleft']  = 'tile-%d-%d-%d.png'%(min(chunk_x, x_neighbor),max(chunk_y, y_neighbor),self.zoom_level)
+    tile_files['botright'] = 'tile-%d-%d-%d.png'%(max(chunk_x, x_neighbor),max(chunk_y, y_neighbor),self.zoom_level)
+
+    chunk_anchor = [min(chunk_x, x_neighbor), min(chunk_y, y_neighbor)]
+    wa_x, wa_y = self.Chunk2WorldCoord(chunk_anchor[0], chunk_anchor[1], self.zoom_level)
+    world_anchor = ((wa_x), (wa_y))
+
+    img_w, img_h = (2*512, 2*512)
+    chunk_surfaces = {}
+    for key, filename in tile_files.items():
+      try:
+        chunk_surfaces[key] = pygame.image.load(TILES_PATH+filename).convert_alpha()
+      except:
+        self.no_tiles = True
+    if (len(chunk_surfaces) == 4):
+      self.no_tiles = False
+
+    if (self.no_tiles == False):
+      self.map_surface = pygame.Surface((img_w, img_h), pygame.SRCALPHA)
+      fog = np.full((img_h, img_w), 225, dtype=np.uint8)
+
+      fog_radius = int(10 * tile_w)
+      fog_radius_sq = fog_radius * fog_radius
+
+      gradient_px = int(3 * tile_w)
+
+      inner_radius = fog_radius - gradient_px
+      inner_sq = inner_radius * inner_radius
+      outer_sq = fog_radius_sq
+
+      for x, y in self.fow:
+        x_coord = int(x)
+        y_coord = int(y)
+        
+        local_x_coord = x_coord-world_anchor[0]
+        local_y_coord = y_coord-world_anchor[1]
+
+        if ((local_x_coord >= 0) and (local_x_coord < 2*512/tile_w)):
+          if ((local_y_coord >= 0) and (local_y_coord < 2*512/tile_h)):
+            cx = int(local_x_coord * tile_w)
+            cy = int(local_y_coord * tile_h)
+
+            x0 = max(0, cx - fog_radius)
+            x1 = min(img_w, cx + fog_radius + 1)
+            y0 = max(0, cy - fog_radius)
+            y1 = min(img_h, cy + fog_radius + 1)
+
+            yy, xx = np.ogrid[y0:y1, x0:x1]
+
+            #mask = (xx - cx) ** 2 + (yy - cy) ** 2 <= fog_radius_sq
+            #fog[y0:y1, x0:x1][mask] = 0
+            dist_sq = (xx - cx) ** 2 + (yy - cy) ** 2
+
+            # fully visible
+            inside = dist_sq <= inner_sq
+            fog_slice = fog[y0:y1, x0:x1]
+            fog_slice[inside] = np.minimum(fog_slice[inside], 0)
+
+            # gradient ring
+            ring = (dist_sq > inner_sq) & (dist_sq <= outer_sq)
+
+            # distance-based alpha interpolation
+            dist = np.sqrt(dist_sq[ring])
+
+            alpha = ( (dist - inner_radius) / (fog_radius - inner_radius) ) * 225
+
+            fog_slice[ring] = np.minimum( fog_slice[ring], alpha.astype(np.uint8))
+
+      self.fog_surface = pygame.Surface((img_w, img_h), pygame.SRCALPHA)
+
+      self.fog_surface.fill((0, 0, 0, 255))  # fully hidden
+
+      alpha_array = pygame.surfarray.pixels_alpha(self.fog_surface)
+      alpha_array[:] = fog.T
+      del alpha_array
+
+      # -------------------------------------------------
+      # Camera state
+      # -------------------------------------------------
+      coordinates_image = (tile_w*(coordinates[0] - world_anchor[0]), tile_h*(coordinates[1]- world_anchor[1]))
+
+      camera_x = coordinates_image[0] - self.map_width // 2
+      camera_y = coordinates_image[1] - self.map_height // 2
+
+      camera_x = max(0, min(camera_x, img_w - self.map_width))
+      camera_y = max(0, min(camera_y, img_h - self.map_height))
+
+      # -------------------------------------------------
+      # Create camera rectangle
+      # -------------------------------------------------
+      self.map_rect = pygame.Rect(
+          int(camera_x),
+          int(camera_y),
+          self.map_width,
+          self.map_height
+      )
+
+      # Clamp rectangle safely
+      self.map_rect.clamp_ip(pygame.Rect(0, 0, img_w, img_h))
+      self.map_surface.blit(chunk_surfaces['topleft'], (0, 0))
+      self.map_surface.blit(chunk_surfaces['topright'], (512, 0))
+      self.map_surface.blit(chunk_surfaces['botleft'], (0, 512))
+      self.map_surface.blit(chunk_surfaces['botright'], (512, 512))
+
+      # draw player position
+      pygame.draw.circle( self.map_surface,
+                            (255,0,0),
+                            (coordinates_image[0]+0.5*tile_w,coordinates_image[1]+.5*tile_h),
+                            max(3, tile_h/2-3))
+
+      # print ('pixels: ',coordinates_image)
+      # Draw settlements
+      settlements = self.state.get('settlements',{})
+      for key in settlements:
+        key_split = key.split(':')
+
+        marker_loc = (tile_w * (int(key_split[0]) - world_anchor[0]),
+                      tile_h *(int(key_split[1]) - world_anchor[1]))
+
+        center = (marker_loc[0]+0.5*tile_w,marker_loc[1]+0.5*tile_h)
+        width = max(tile_w, 10)
+        height = max(tile_h, 10)
+        rect = (center[0] - (0.5*width),center[1] - (0.5*height), width, width)
+        pygame.draw.rect(self.map_surface,
+                        (255,255,0),
+                        rect,
+                        2)
+
+      # Draw home
+      markers = self.state.get('markers',{})
+      for key in markers:
+        name = markers[key]
+        key_split = key.split(':')
+        if name.lower() == 'home':
+          marker_loc = (tile_w * (int(key_split[0]) - world_anchor[0]),
+                        tile_h * (int(key_split[1]) - world_anchor[1]))
+
+          center = (marker_loc[0]+0.5*tile_w,marker_loc[1]+0.5*tile_h)
+          width = max(tile_w, 10)
+          height = max(tile_h, 10)
+          rect = (center[0] - (0.5*width),center[1] - (0.5*height), width, width)
+          pygame.draw.rect(
+              self.map_surface,
+              (255,0,0),
+              rect,
+              3)
+          pygame.draw.line(
+              self.map_surface,
+              (255,0,0),
+              (rect[0], rect[1]),
+              (rect[0]+0.5*width,rect[1]-0.5*height ),
+              3)
+          pygame.draw.line(
+              self.map_surface,
+              (255,0,0),
+              (rect[0]+width, rect[1]),
+              (rect[0]+0.5*width,rect[1]-0.5*height ),
+              3)
+        else:
+          marker_loc = (tile_w * (int(key_split[0]) - world_anchor[0]),
+                        tile_h * (int(key_split[1]) - world_anchor[1]))
+          center = (marker_loc[0]+0.5*tile_w,marker_loc[1]+0.5*tile_h)
+          width = max(tile_w, 10)
+          height = max(tile_h, 10)
+          rect = (center[0] - (0.5*width),center[1] - (0.5*height), width, width)
+          pygame.draw.line( self.map_surface,
+                            (255,0,0),
+                            (rect[0], rect[1]),
+                            (rect[0]+width, rect[1]+height ),
+                            2)
+          pygame.draw.line( self.map_surface,
+                            (255,0,0),
+                            (rect[0], rect[1]+height),
+                            (rect[0]+width, rect[1] ),
+                            2)
+
+
   def File_Has_Changed(self):
     if not self.logfile_changed_ts:
       self.logfile_changed_ts = os.path.getmtime(LOG_FILE)
@@ -208,6 +455,8 @@ class URL_Calendar():
     if 'temp settlement' in self.progress:
       self.temp_village_content = self.progress['temp settlement']['content']
       self.current_settlement_key = self.progress['temp settlement']['key']
+    if 'last coordinate' in self.progress:
+      self.last_coord_str = self.progress['last coordinate']
     if (DEBUG):
       print(self.progress)
       print(self.current_timestamp)
@@ -225,6 +474,16 @@ class URL_Calendar():
     self.village_goods = self.state.get('village_goods',{})
     tanning_outcomes = self.state.get('tanning_outcomes', {})
     building_counts = self.state.get('buildings', {})
+    
+    prev_fow_size = len(self.fow)
+    self.fow = set()
+    if Path(FOW_FILE).exists():
+      with open(FOW_FILE) as cf:
+        reader = csv.reader(cf)
+        next(reader)
+
+        for x, y in reader:
+            self.fow.add((int(x), int(y)))
 
     with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:  # Adding 'errors='replace''
       lines = f.readlines()
@@ -262,11 +521,11 @@ class URL_Calendar():
       if (not self.current_timestamp) or (new_ts['day'] != self.current_timestamp['day']):
         self.new_day = True
         self.progress['chores'] = {'Make Fire':{'needed':False, 'done':False},
-                              'Sacrifice':    {'needed':True, 'done':False},
-                              'Feed Animals': {'needed':self.has_dog, 'done':False},
-                              'Herblore':     {'needed':True, 'done':False},
-                              'Weatherlore':  {'needed':True, 'done':False}
-                              }
+                                  'Sacrifice':    {'needed':True, 'done':False},
+                                  'Feed Animals': {'needed':self.has_dog, 'done':False},
+                                  'Herblore':     {'needed':True, 'done':False},
+                                  'Weatherlore':  {'needed':True, 'done':False}
+                                  }
 
       self.current_timestamp = new_ts
 
@@ -284,16 +543,36 @@ class URL_Calendar():
       self.Look_For_Chores(['You do not recognize what','You have learned something new about','You do know that'], lines,i, msg, self.progress['chores']['Herblore'],operator_and = False)
       self.Look_For_Chores(['Eat now','gives you a happy look.'], lines,i, msg, self.progress['chores']['Feed Animals'], multiline = True)
 
-      if 'You are entering ' in msg:
-        s = msg[msg.find('You are entering'):]
-        s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ä
-
+      if ('Entering settled area ...' in msg):
         key = f'{x}:{y}'
         self.current_settlement_key = key
-        if key not in settlements:
-          settlements[key] = s
-        self.temp_village_content = []
+        if (key in markers):
+          if markers[key].lower() == 'home':
+            pass
+
         self.in_settlement = True
+        self.temp_village_content = []
+        if key not in settlements:
+          settlements[key] = "settlement"
+      elif 'You are entering ' in msg:
+        s = msg[msg.find('You are entering'):]
+        s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
+
+        key = f'{x}:{y}'
+        if (self.in_settlement):
+          if key in settlements:
+            if settlements[key] != s:
+              settlements[key] = s
+        # self.current_settlement_key = key
+        # if key not in settlements:
+        #   settlements[key] = s
+        # self.temp_village_content = []
+      elif ('withdraws' in msg):
+        if self.in_settlement:
+          key = f'{x}:{y}'
+          if (settlements[key] == "settlement"):
+            s = msg.replace('The ','').replace('tribesman ','').replace('Old ','').replace('boy ','').replace('Maiden ','').replace('woodsman ','').replace('man ','').replace('hunter ','').replace(' withdraws from your way.','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
+            settlements[key] = s + ' ' + settlements[key]
       elif 'Zooming out ...' in msg:
         if (self.in_settlement):
           self.in_settlement = False
@@ -308,7 +587,7 @@ class URL_Calendar():
           markers[key] = text[1]
       elif msg == 'Ok. You finish the current building job.':
         # look back to find last building name
-        for j in range(1, 20):
+        for j in range(1, 50):
           prev_line = lines[max(1,i-j)]
           if 'BUILDING OPTIONS:' in prev_line:
             name = prev_line.split('BUILDING OPTIONS:')[-1].strip().lower()
@@ -318,7 +597,7 @@ class URL_Calendar():
             break
         else:
           name = 'unknown'
-        for keyword in ['fence', 'corner', 'wall', 'door', 'shutter', 'cellar', 'fireplace', 'wooden building']:
+        for keyword in ['fence', 'corner', 'wall', 'door', 'shutter', 'cellar', 'fireplace', 'wooden building', 'shelter']:
           if keyword in name.lower():
             building_counts[keyword] = building_counts.get(keyword, 0) + 1
       elif 'sighs once, then stays laying dead still' in msg:
@@ -361,16 +640,21 @@ class URL_Calendar():
         self.Parse_Long_Process(lines, i, msg, cooking, cooking_type, amount_type)
       elif 'You leave the nettles to soak in the water, after which they are properly retted.' in msg:
         self.Parse_Long_Process(lines, i, msg, textile, 'Retting')
+      elif 'tendons are now left to dry, after which you can proceed to separate the sinew fibre.' in msg:
+        self.Parse_Long_Process(lines, i, msg, textile, 'Drying Tendons')
       elif 'The retted nettles are now set in loose bundles to dry out fully, after which you can proceed with extracting the fibre.' in msg:
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Nettles')
       elif self.in_settlement:
         if 'Things that are here:' in msg or 'There are several objects here:' in msg:
           self.Parse_Items_On_Ground(lines, i)
+      
+      self.fow.add((x,y))
 
       i += 1
       last_ts = ts
     self.progress['last_ts'] = ts
     self.progress['repeats'] = repeating_timestamps
+    self.progress['last coordinate'] = f'{x}:{y}'
     self.progress['temp settlement']={}
     self.progress['temp settlement']['content'] = self.temp_village_content
     self.progress['temp settlement']['key'] = self.current_settlement_key
@@ -397,11 +681,20 @@ class URL_Calendar():
 
     self.Save_Json(STATE_FILE, self.new_state)
     self.Save_Json(PROGRESS_FILE, self.progress)
-    
+
     if (x != self.last_x) or (y != self.last_y):
-      print('Map coordinate: ',x,y)
+      print('Map coordinate: ',x,y, place)
       self.last_x = x
       self.last_y = y
+    
+    if (len(self.fow) > prev_fow_size):
+      with open(FOW_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        for x_, y_ in sorted(self.fow):
+            writer.writerow([x_, y_])
+
+
+    self.CreateMap((self.last_x, self.last_y))
 
   def Convert_Weekday_to_Day_Month(self, weekday, week, year, hour):
     year_day = week * 7 + weekday
@@ -426,8 +719,8 @@ class URL_Calendar():
     self.event_markers = {}
     self.todays_events = {}
     self.weekly_events = defaultdict(list)
-    self.current_timestamp['day']=21 # debug specific dates
-    self.current_timestamp['month']=8 # debug specific dates
+    #self.current_timestamp['day']=21 # debug specific dates
+    #self.current_timestamp['month']=8 # debug specific dates
 
     calendar_day_today = self.Convert_To_Calendar_Day(self.current_timestamp['day'], self.current_timestamp['month'])
     self.current_weekday = self.Convert_Calendar_Day_2_Week_Day(calendar_day_today)
@@ -504,6 +797,8 @@ class URL_Calendar():
             self.Add_Event(cal_day, 'R')
           elif (t['type'] == 'Drying Nettles'):
             self.Add_Event(cal_day, 'd')
+          elif (t['type'] == 'Drying Tendons'):
+            self.Add_Event(cal_day, 't')
         if (cal_day == calendar_day_today):
           if (self.Check_Date_Is_Before_Or_After(end_date, tomorrow) == BEFORE):
             self.todays_events[end_date[3]] = t['type']
@@ -546,26 +841,31 @@ class URL_Calendar():
         chore_var['done'] = True
 
   def Parse_Long_Process(self, lines, i, msg, item, process_type, amount=None):
+    duration = None
     for j in range(i+1, min(i+4, len(lines))):
       if 'should be complete' in lines[j]:
-        m = re.search(r'after (\d+) days', lines[j])
-        if m:
-          duration = int(m.group(1))
-          if self.current_timestamp:
-            if (amount):
-              item.append({
-                'type': process_type,
-                'amount': amount,
-                'start': self.To_Str_Date(self.current_timestamp),
-                'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
-              })
-            else:
-              item.append({
-                'type': process_type,
-                'start': self.To_Str_Date(self.current_timestamp),
-                'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
-              })
-            break
+        if 'tomorrow' in lines[j]:
+          duration = 1
+        else:
+          m = re.search(r'after (\d+) days', lines[j])
+          if m:
+            duration = int(m.group(1))
+      if duration:
+        if self.current_timestamp:
+          if (amount):
+            item.append({
+              'type': process_type,
+              'amount': amount,
+              'start': self.To_Str_Date(self.current_timestamp),
+              'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
+            })
+          else:
+            item.append({
+              'type': process_type,
+              'start': self.To_Str_Date(self.current_timestamp),
+              'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
+            })
+          break
 
   def Parse_Short_Process(self, msg, item):
     if self.current_timestamp:
@@ -784,23 +1084,53 @@ class URL_Calendar():
 
   def Draw_Tally(self):
     # Draw Tally Panel below calendar
-    tally_x = 10
+    #tally_x = 10
     tally_y = self.calendar_year_y + week_height + 40
+    chores_x = 10 + display_weeks * week_width - CAL_WIDTH - self.CHORES_WIDTH - 20
+    chores_y = self.calendar_year_y + week_height + 10 + 200+5
     tally_h = len(self.new_state['kills']) * 25 + 40 
-    pygame.draw.rect(self.screen, GRAY, (tally_x, tally_y, 400, tally_h))
-    pygame.draw.rect(self.screen, BLACK, (tally_x, tally_y, 400, tally_h), 2)
+    pygame.draw.rect(self.screen, GRAY, (chores_x, chores_y, self.CHORES_WIDTH, tally_h))
+    pygame.draw.rect(self.screen, BLACK, (chores_x, chores_y, self.CHORES_WIDTH, tally_h), 2)
     title = self.TITLE_FONT.render('Kills:', True, BLACK)
-    self.screen.blit(title, (tally_x + 10, tally_y + 10))
+    self.screen.blit(title, (chores_x + 10, chores_y + 10))
 
     for i, (key, val) in enumerate(self.new_state['kills'].items()):
       stat_text = self.BIG_FONT.render(f'{key}s: {val}', True, BLACK)
-      self.screen.blit(stat_text, (tally_x + 10, tally_y + 40 + i * 25))
+      self.screen.blit(stat_text, (chores_x + 10, chores_y + 40 + i * 25))
+
+  def Draw_Map(self):
+    map_x = 10
+    map_y = self.calendar_year_y + week_height + 10
+    pygame.draw.rect(self.screen, GRAY, (map_x, map_y, self.map_width, self.map_height))
+    pygame.draw.rect(self.screen, BLACK, (map_x, map_y, self.map_width, self.map_height), 2)
+    if (self.map_surface):
+      self.screen.blit(self.map_surface, (map_x, map_y), self.map_rect)
+      self.screen.blit(self.fog_surface, (map_x, map_y), self.map_rect)
+    else:
+      text = self.BIG_FONT.render("No map tiles found in folder: ", True, BLACK)
+      self.screen.blit(text, (map_x+5, map_y))
+
+      text = self.BIG_FONT.render(TILES_PATH, True, BLACK)
+      self.screen.blit(text, (map_x+5, map_y+25))
+
+      text = self.BIG_FONT.render('Use tool urwmap to extract tiles and place in the folder above.', True, BLACK)
+      self.screen.blit(text, (map_x+5, map_y+50))
+
+      text = self.BIG_FONT.render('Download the tool here:', True, BLACK)
+      self.screen.blit(text, (map_x+5, map_y+75))
+
+      text = self.BIG_FONT.render('https://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html', True, BLACK)
+      self.screen.blit(text, (map_x+5, map_y+100))
+      
+      print('Download urwmap-0.0.3 from here:\nhttps://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html')
+    return
 
   def Draw(self):
     self.Draw_Calendar_Year()
     self.Draw_Weekly_Calendar()
     self.Draw_Chores()
     self.Draw_Tally()
+    self.Draw_Map()
     pygame.display.flip()
 
 # Colors
@@ -821,6 +1151,8 @@ SEASON_COLORS = {
 LOG_FILE = 'msglog.txt'
 STATE_FILE = 'state.json'
 PROGRESS_FILE = 'progress.json'
+FOW_FILE = 'fog_of_war.csv'
+TILES_PATH = 'tiles\\'
 
 # game calendar info
 days_per_month = {i: 30 for i in range(1, 13)}
