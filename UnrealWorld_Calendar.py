@@ -779,7 +779,7 @@ class URL_Calendar():
             self.Add_Event(cal_day, 'D')
           elif o['type'] == 'Smoking':
             self.Add_Event(cal_day, 'S')
-            if (self.Check_Date_Is_Between(cooking_start_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
+            if (self.Check_Date_Is_Before_Or_After(cooking_end_date, this_weeK_array) == AFTER):
               s = 1
               e = 8
               if (self.Check_Date_Is_Before_Or_After(cooking_start_date, this_weeK_array) == AFTER):
