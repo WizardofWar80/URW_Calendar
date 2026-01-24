@@ -26,6 +26,7 @@ class URL_Calendar():
   def __init__(self):
     self.last_x = 0
     self.last_y = 0
+    self.at_home = False
     self.event_markers = {}
     self.todays_events = {}
     self.weekly_events = {}
@@ -40,16 +41,36 @@ class URL_Calendar():
     self.in_settlement = False
     self.current_settlement_key = None
     self.village_goods = {}
+    self.food_storage = {}
     self.fow = set()
-    self.zoom_level = 4
+    self.zoom_level = 3
     self.map_width = 550
-    self.map_height = 500
+    self.map_height = 460
     self.map_surface = None
     self.fog_surface = None
     self.map_rect = None
     self.no_tiles = True
     self.map_tiles = [2730, 2048]
     self.tiles_sizes = [[0,0],[1.125,1.25], [2.25,2.5],[4.5,5],[9,10],[18,20]]
+    self.months = ['Center',
+                   'Pearl',
+                   'Soil',
+                   'Swidden',
+                   'Seedtime',
+                   'Fallow',
+                   'Hay',
+                   'Harvest',
+                   'Fall',
+                   'Dirt',
+                   'Dead',
+                   'Winter',
+                   'Center']
+    self.months_until_weeks = [3, 7, 11, 15, 20, 24, 29, 33, 37, 41, 46, 50, 52]
+    self.drying_months1 = [1,4]
+    self.drying_months2 = [10, 13]
+    self.birch_bark_months = [4, 6]
+    self.nettle_harvest_months = [7,8]
+    self.lower_screen = 0
     # Setup screen
     self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption('Unreal World Calendar')
@@ -270,7 +291,7 @@ class URL_Calendar():
       self.map_surface = pygame.Surface((img_w, img_h), pygame.SRCALPHA)
       fog = np.full((img_h, img_w), 225, dtype=np.uint8)
 
-      fog_radius = int(10 * tile_w)
+      fog_radius = int(12 * tile_w)
       fog_radius_sq = fog_radius * fog_radius
 
       gradient_px = int(3 * tile_w)
@@ -361,7 +382,7 @@ class URL_Calendar():
 
       # print ('pixels: ',coordinates_image)
       # Draw settlements
-      settlements = self.state.get('settlements',{})
+      settlements = self.new_state.get('settlements',{})
       for key in settlements:
         key_split = key.split(':')
 
@@ -378,7 +399,7 @@ class URL_Calendar():
                         2)
 
       # Draw home
-      markers = self.state.get('markers',{})
+      markers = self.new_state.get('markers',{})
       for key in markers:
         name = markers[key]
         key_split = key.split(':')
@@ -425,7 +446,6 @@ class URL_Calendar():
                             (rect[0]+width, rect[1] ),
                             2)
 
-
   def File_Has_Changed(self):
     if not self.logfile_changed_ts:
       self.logfile_changed_ts = os.path.getmtime(LOG_FILE)
@@ -466,6 +486,7 @@ class URL_Calendar():
     sacrifices = self.state.get('sacrifices', 0)
     kills = self.state.get('kills', {})
     meat_cuts = self.state.get('meat_cuts', {})
+    self.food_storage = self.state.get('stored_food', {})
     tanning = self.state.get('tanning_processes', [])
     cooking = self.state.get('cooking_processes', [])
     textile = self.state.get('textile_processes', [])
@@ -475,15 +496,19 @@ class URL_Calendar():
     tanning_outcomes = self.state.get('tanning_outcomes', {})
     building_counts = self.state.get('buildings', {})
     
-    prev_fow_size = len(self.fow)
+    
     self.fow = set()
+    fog_values_loaded = 0
     if Path(FOW_FILE).exists():
       with open(FOW_FILE) as cf:
         reader = csv.reader(cf)
-        next(reader)
+        #next(reader)
 
-        for x, y in reader:
-            self.fow.add((int(x), int(y)))
+        for x_, y_ in reader:
+            self.fow.add((int(x_), int(y_)))
+            fog_values_loaded += 1
+    print (fog_values_loaded, 'fog values loaded')
+    prev_fow_size = len(self.fow)
 
     with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:  # Adding 'errors='replace''
       lines = f.readlines()
@@ -554,7 +579,7 @@ class URL_Calendar():
         self.temp_village_content = []
         if key not in settlements:
           settlements[key] = "settlement"
-      elif 'You are entering ' in msg:
+      elif ('You are entering ' in msg):
         s = msg[msg.find('You are entering'):]
         s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
 
@@ -573,19 +598,28 @@ class URL_Calendar():
           if (settlements[key] == "settlement"):
             s = msg.replace('The ','').replace('tribesman ','').replace('Old ','').replace('boy ','').replace('Maiden ','').replace('woodsman ','').replace('man ','').replace('hunter ','').replace(' withdraws from your way.','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
             settlements[key] = s + ' ' + settlements[key]
-      elif 'Zooming out ...' in msg:
+      elif ('Zooming in ...' in msg):
+        key = f'{x}:{y}'
+        if (key in markers):
+          if (markers[key].lower() == 'home'):
+            self.at_home = True
+      elif ('Zooming out ...' in msg):
+        
         if (self.in_settlement):
           self.in_settlement = False
           if not self.current_settlement_key:
             self.current_settlement_key = f'{x}:{y}'
           self.Tally_Village_Goods(self.current_settlement_key)
           self.current_settlement_key = None
-      elif 'You see a marked location' in msg:
+        elif (self.at_home):
+          self.Tally_Village_Goods('home')
+          self.at_home = False
+      elif ('You see a marked location' in msg):
         text = msg.split('\"')
         key = f'{x}:{y}'
         if key not in markers:
           markers[key] = text[1]
-      elif msg == 'Ok. You finish the current building job.':
+      elif (msg == 'Ok. You finish the current building job.'):
         # look back to find last building name
         for j in range(1, 50):
           prev_line = lines[max(1,i-j)]
@@ -600,14 +634,14 @@ class URL_Calendar():
         for keyword in ['fence', 'corner', 'wall', 'door', 'shutter', 'cellar', 'fireplace', 'wooden building', 'shelter']:
           if keyword in name.lower():
             building_counts[keyword] = building_counts.get(keyword, 0) + 1
-      elif 'sighs once, then stays laying dead still' in msg:
+      elif ('sighs once, then stays laying dead still' in msg):
         m = re.search(r'the (.*?) sighs once', msg)
         if m:
           name = m.group(1).strip().lower().replace(' calf', '')
           if ' ' in name:
             name = name.split(' ')[1]
           kills[name] = kills.get(name, 0) + 1
-      elif 'You got' in msg and 'meat' in msg:
+      elif ('You got' in msg and 'meat' in msg):
         m = re.search(r'You got (\d+) edible cuts of (.*?) meat', msg)
         if m:
           count, name = m.groups()
@@ -615,7 +649,7 @@ class URL_Calendar():
           if ' ' in name:
             name = name.split(' ')[1]
           meat_cuts[name] = meat_cuts.get(name, 0) + int(count)
-      elif 'finish the tanning process and obtained a' in msg:
+      elif ('finish the tanning process and obtained a' in msg):
         m = re.search(r'obtained a (.*?) (.*?) (leather|fur)', msg)
         if m:
           quality, ttype, material = m.groups()
@@ -625,9 +659,9 @@ class URL_Calendar():
           key = f'{ttype}:{material}:{quality}'
           tanning_outcomes[key] = tanning_outcomes.get(key, 0) + 1
       # Processes
-      elif 'tanning the skin' in msg:
+      elif ('tanning the skin' in msg):
         self.Parse_Short_Process(msg, tanning)
-      elif 'Ok, you leave' in msg and 'to cook and prepare' in msg:
+      elif ('Ok, you leave' in msg and 'to cook and prepare' in msg):
         cooking_type = ''
         if 'dried' in msg:
           cooking_type = 'Drying Food'
@@ -638,14 +672,14 @@ class URL_Calendar():
           i += 1
         amount_type = msg.split('leave')[-1].split('to cook')[0].strip()
         self.Parse_Long_Process(lines, i, msg, cooking, cooking_type, amount_type)
-      elif 'You leave the nettles to soak in the water, after which they are properly retted.' in msg:
+      elif ('You leave the nettles to soak in the water, after which they are properly retted.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Retting')
-      elif 'tendons are now left to dry, after which you can proceed to separate the sinew fibre.' in msg:
+      elif ('tendons are now left to dry, after which you can proceed to separate the sinew fibre.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Tendons')
-      elif 'The retted nettles are now set in loose bundles to dry out fully, after which you can proceed with extracting the fibre.' in msg:
+      elif ('The retted nettles are now set in loose bundles to dry out fully, after which you can proceed with extracting the fibre.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Nettles')
-      elif self.in_settlement:
-        if 'Things that are here:' in msg or 'There are several objects here:' in msg:
+      elif (self.in_settlement or self.at_home):
+        if ('Things that are here:' in msg or 'There are several objects here:' in msg):
           self.Parse_Items_On_Ground(lines, i)
       
       self.fow.add((x,y))
@@ -669,6 +703,7 @@ class URL_Calendar():
         'sacrifices': sacrifices,
         'kills': kills,
         'meat_cuts': meat_cuts,
+        'stored_food': self.food_storage,
         'settlements': settlements,
         'markers':markers,
         'tanning_processes': tanning,
@@ -692,7 +727,6 @@ class URL_Calendar():
         writer = csv.writer(f)
         for x_, y_ in sorted(self.fow):
             writer.writerow([x_, y_])
-
 
     self.CreateMap((self.last_x, self.last_y))
 
@@ -820,8 +854,8 @@ class URL_Calendar():
             line = lines[max(1,i-j)]
           else:
             line = lines[min(i+j,len(lines)-1)]
-          for i in range(1,len(search_strings)):
-            ss = search_strings[i]
+          for k in range(1,len(search_strings)):
+            ss = search_strings[k]
             if ss in line:
               count_matches += 1
           if count_matches == len(search_strings) and operator_and:
@@ -920,22 +954,32 @@ class URL_Calendar():
     num_items = 0
     for tile_contents in self.temp_village_content:
       for item in tile_contents:
-        tokens = item.split(' ')
-        try:
-          number = int(tokens[0])
-          item = item.replace(tokens[0]+' ', '')
-          if item.endswith('s'):
-            item = item[:-1]
-        except:
-          number = 1
-        num_items+=1
-        if item in temp_village_goods:
-          temp_village_goods[item] += number
+        count_this = False
+        if (key == 'home'):
+          if('cut' in item):
+            count_this = True
         else:
-          temp_village_goods[item] = number
+          count_this = True
+        if (count_this):
+          tokens = item.split(' ')
+          try:
+            number = int(tokens[0])
+            item = item.replace(tokens[0]+' ', '')
+            if item.endswith('s'):
+              item = item[:-1]
+          except:
+            number = 1
+          num_items+=1
+          if item in temp_village_goods:
+            temp_village_goods[item] += number
+          else:
+            temp_village_goods[item] = number
     # maybe find a better way to handle visits to villages without looking at all items and not overwrite everything
     if (num_items > 0):
-      self.village_goods[key] = temp_village_goods
+      if (key == 'home'):
+        self.food_storage = temp_village_goods
+      else:
+        self.village_goods[key] = temp_village_goods
 
     self.temp_village_content = []
 
@@ -946,9 +990,19 @@ class URL_Calendar():
       display_hour = 12
     return f'{display_hour:2d} {suffix}'
 
+  def GetFoodStorageInWeeks(self):
+    weeks = 0
+    meat_cuts = 0
+    for item in self.food_storage:
+      meat_cuts += self.food_storage[item]
+
+    weeks = meat_cuts / 32
+
+    return weeks
+
   def Draw_Weekly_Calendar(self):
     atX = 10 + display_weeks * week_width - CAL_WIDTH
-    atY = self.calendar_year_y + week_height + 10
+    atY = self.lower_screen
     calendar_surface = pygame.Surface((CAL_WIDTH, CAL_HEIGHT))
     calendar_surface.fill(BG_COLOR)
 
@@ -992,7 +1046,7 @@ class URL_Calendar():
             text_color = EVENT_COLOR_HIGHLIGHTED if is_now else EVENT_COLOR
             for k, event in enumerate(events[:1]):
               text = self.font_wk_cal.render(event, True, text_color)
-              calendar_surface.blit(text, (x + 4, y + 2))
+              calendar_surface.blit(text, (x + 4, y + 0))
 
     # Grid border
     total_height = (len(VISIBLE_HOURS)-1) * HOUR_HEIGHT
@@ -1003,11 +1057,23 @@ class URL_Calendar():
 
   def Draw_Calendar_Year(self):
     self.screen.fill(WHITE)
+    index = 0
+    start = 10
+    self.calendar_year_y = 5
+    for week in self.months_until_weeks:
+      week_x = 10 + week * week_width
+      label = self.FONT.render(self.months[index], True, BLACK)
+      pygame.draw.rect(self.screen, BLACK, (start, self.calendar_year_y, week_x-start-1,33),1)
+      label_rect = label.get_rect(center=(start+(week_x - start)// 2,self.calendar_year_y+7)) 
+      self.screen.blit(label, label_rect)
+      start = week_x
+      index +=1
 
+    box_y = 0
     # Draw weekly columns
     for week in range(display_weeks):
       week_x = 10 + week * week_width
-      self.calendar_year_y = 20
+      self.calendar_year_y = 20+20
 
       # Label week number (centered)
       label = self.FONT.render(f'{week+1}', True, BLACK)
@@ -1049,11 +1115,105 @@ class URL_Calendar():
             y = rect.y + 18 + row * 14
             marker = self.BOLD_FONT.render(e, True, BLACK)
             self.screen.blit(marker, (x, y))
+      
+    row_y = box_y + box_height + 3
+    row_height = 18
+    # Draw Drying time
+    # the months are defined by until which week they last, 
+    # so first month lasts from week 1 until including week 3
+    # second month lasts from previous spot until including week 7
+
+    starting_month = self.drying_months1[0]-1
+    if (starting_month == 0):
+      start_week = 0
+    else:
+      start_week = self.months_until_weeks[starting_month-1]
+
+    end_week = self.months_until_weeks[self.drying_months1[1]-1]
+    start_x = 10 + start_week * week_width
+    num_weeks = end_week-start_week
+
+    label = self.FONT.render('Meat drying possible', True, BLACK)
+    pygame.draw.rect(self.screen, SEASON_COLORS['winter'], (start_x,row_y, num_weeks*week_width-2, row_height))
+    pygame.draw.rect(self.screen, BLACK, (start_x,row_y, num_weeks*week_width-2, row_height),1)
+    label_rect = label.get_rect(center=(start_x+(num_weeks*week_width)// 2,row_y+8)) 
+    self.screen.blit(label, label_rect)
+
+    starting_month = self.drying_months2[0]-1
+    if (starting_month == 0):
+      start_week = 0
+    else:
+      start_week = self.months_until_weeks[starting_month-1]
+
+    end_week = self.months_until_weeks[self.drying_months2[1]-1]
+    start_x = 10 + start_week * week_width
+    num_weeks = end_week-start_week
+
+    label = self.FONT.render('Meat drying possible', True, BLACK)
+    pygame.draw.rect(self.screen, SEASON_COLORS['winter'], (start_x,row_y, num_weeks*week_width-2, row_height))
+    pygame.draw.rect(self.screen, BLACK, (start_x,row_y, num_weeks*week_width-2, row_height),1)
+    label_rect = label.get_rect(center=(start_x+(num_weeks*week_width)// 2,row_y+8)) 
+    self.screen.blit(label, label_rect)
+
+
+    # Draw Birch Bark Time, Nettles Time
+    
+    row_y += row_height + 3
+    starting_month = self.birch_bark_months[0]-1
+    if (starting_month == 0):
+      start_week = 0
+    else:
+      start_week = self.months_until_weeks[starting_month-1]
+
+    end_week = self.months_until_weeks[self.birch_bark_months[1]-1]
+    start_x = 10 + start_week * week_width
+    num_weeks = end_week-start_week
+
+    label = self.FONT.render('Birch Bark harvestable', True, BLACK)
+    pygame.draw.rect(self.screen, SEASON_COLORS['spring'], (start_x,row_y, num_weeks*week_width-2, row_height))
+    pygame.draw.rect(self.screen, BLACK, (start_x,row_y, num_weeks*week_width-2, row_height),1)
+    label_rect = label.get_rect(center=(start_x+(num_weeks*week_width)// 2,row_y+8)) 
+    self.screen.blit(label, label_rect)
+
+    starting_month = self.nettle_harvest_months[0]-1
+    if (starting_month == 0):
+      start_week = 0
+    else:
+      start_week = self.months_until_weeks[starting_month-1]
+
+    end_week = self.months_until_weeks[self.nettle_harvest_months[1]-1]
+    start_x = 10 + start_week * week_width
+    num_weeks = end_week-start_week
+
+    label = self.FONT.render('Nettles harvestable', True, BLACK)
+    pygame.draw.rect(self.screen, SEASON_COLORS['summer'], (start_x,row_y, num_weeks*week_width-2, row_height))
+    pygame.draw.rect(self.screen, BLACK, (start_x,row_y, num_weeks*week_width-2, row_height),1)
+    label_rect = label.get_rect(center=(start_x+(num_weeks*week_width)// 2,row_y+8)) 
+    self.screen.blit(label, label_rect)
+
+    self.lower_screen = row_y + row_height + 3
+
+  def Draw_FoodStorage(self):
+    pos_x =  10 + display_weeks * week_width - CAL_WIDTH - self.CHORES_WIDTH - 20
+    pos_y = self.lower_screen
+    storage_title = self.TITLE_FONT.render('Food Storage:', True, BLACK)
+    self.screen.blit(storage_title, (pos_x + 10, pos_y))
+    weeks = self.GetFoodStorageInWeeks()
+    storage_text = self.TITLE_FONT.render('None', True, BLACK)
+    if (weeks < 1):
+      storage_text = self.BIG_FONT.render('Less than a week', True, BLACK)
+    elif (weeks < 3):
+      storage_text = self.BIG_FONT.render('%3.1f weeks'%weeks, True, BLACK)
+    else:
+      storage_text = self.BIG_FONT.render('%d weeks '%round(weeks), True, BLACK)
+
+    self.screen.blit(storage_text, (pos_x + 12, pos_y + 22))
+
 
   def Draw_Chores(self):
     # Draw Chores Section
     chores_x = 10 + display_weeks * week_width - CAL_WIDTH - self.CHORES_WIDTH - 20
-    chores_y = self.calendar_year_y + week_height + 10
+    chores_y = self.lower_screen + 45
     pygame.draw.rect(self.screen, GRAY, (chores_x, chores_y, self.CHORES_WIDTH, 200))
     pygame.draw.rect(self.screen, BLACK, (chores_x, chores_y, self.CHORES_WIDTH, 200), 2)
     chores_title = self.TITLE_FONT.render('Chores', True, BLACK)
@@ -1087,7 +1247,7 @@ class URL_Calendar():
     #tally_x = 10
     tally_y = self.calendar_year_y + week_height + 40
     chores_x = 10 + display_weeks * week_width - CAL_WIDTH - self.CHORES_WIDTH - 20
-    chores_y = self.calendar_year_y + week_height + 10 + 200+5
+    chores_y = self.lower_screen + 200+5
     tally_h = len(self.new_state['kills']) * 25 + 40 
     pygame.draw.rect(self.screen, GRAY, (chores_x, chores_y, self.CHORES_WIDTH, tally_h))
     pygame.draw.rect(self.screen, BLACK, (chores_x, chores_y, self.CHORES_WIDTH, tally_h), 2)
@@ -1100,7 +1260,7 @@ class URL_Calendar():
 
   def Draw_Map(self):
     map_x = 10
-    map_y = self.calendar_year_y + week_height + 10
+    map_y = self.lower_screen
     pygame.draw.rect(self.screen, GRAY, (map_x, map_y, self.map_width, self.map_height))
     pygame.draw.rect(self.screen, BLACK, (map_x, map_y, self.map_width, self.map_height), 2)
     if (self.map_surface):
@@ -1128,6 +1288,7 @@ class URL_Calendar():
   def Draw(self):
     self.Draw_Calendar_Year()
     self.Draw_Weekly_Calendar()
+    self.Draw_FoodStorage()
     self.Draw_Chores()
     self.Draw_Tally()
     self.Draw_Map()
@@ -1183,7 +1344,7 @@ FIRST = 1
 SECOND = 2
 BOTH = 3
 
-CAL_WIDTH, CAL_HEIGHT = 730, 500
+CAL_WIDTH, CAL_HEIGHT = 730, 460
 
 # Colors
 BG_COLOR = (245, 241, 235)
