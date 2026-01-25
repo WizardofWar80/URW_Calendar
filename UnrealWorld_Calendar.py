@@ -42,6 +42,7 @@ class URL_Calendar():
     self.current_settlement_key = None
     self.village_goods = {}
     self.food_storage = {}
+    self.revisited_tile = -1
     self.fow = set()
     self.zoom_level = 3
     self.map_width = 550
@@ -457,6 +458,18 @@ class URL_Calendar():
         return True
     return False
 
+  def Check_Key_Is_Near(self, key, my_list, name = None, dist=2):
+    x = int(key.split(':')[0])
+    y = int(key.split(':')[1])
+
+    for i in range(-dist, dist+1):
+      for k in range(-dist, dist+1):
+        search_key = f'{x+i}:{y+k}'
+        if (search_key in my_list):
+          if (name is None or name == my_list[search_key].lower()):
+            return search_key
+    return None
+
   def Parse_Log(self):
     self.state = self.Load_Json(STATE_FILE)
     self.progress = self.Load_Json(PROGRESS_FILE)
@@ -496,7 +509,11 @@ class URL_Calendar():
     tanning_outcomes = self.state.get('tanning_outcomes', {})
     building_counts = self.state.get('buildings', {})
     
-    
+    if (self.current_settlement_key):
+      key2 = self.Check_Key_Is_Near(self.current_settlement_key, markers, 'home')
+      self.current_settlement_key = key2
+      self.at_home = True
+
     self.fow = set()
     fog_values_loaded = 0
     if Path(FOW_FILE).exists():
@@ -505,8 +522,8 @@ class URL_Calendar():
         #next(reader)
 
         for x_, y_ in reader:
-            self.fow.add((int(x_), int(y_)))
-            fog_values_loaded += 1
+          self.fow.add((int(x_), int(y_)))
+          fog_values_loaded += 1
     print (fog_values_loaded, 'fog values loaded')
     prev_fow_size = len(self.fow)
 
@@ -570,22 +587,35 @@ class URL_Calendar():
 
       if ('Entering settled area ...' in msg):
         key = f'{x}:{y}'
-        self.current_settlement_key = key
-        if (key in markers):
-          if markers[key].lower() == 'home':
+        key2 = self.Check_Key_Is_Near(key, markers, 'home')
+        self.current_settlement_key = key2
+        if (key2):
+        #if (key in markers):
+          if markers[key2].lower() == 'home':
             pass
 
         self.in_settlement = True
         self.temp_village_content = []
-        if key not in settlements:
+        key2 = self.Check_Key_Is_Near(key, settlements)
+        if (key2 == None):
           settlements[key] = "settlement"
+      elif ('You have come at your settlement and enter the familiar and cosy courtyard.' in msg):
+        self.in_settlement = True
+        self.temp_village_content = []
+        key = f'{x}:{y}'
+        key2 = self.Check_Key_Is_Near(key, markers, 'home')
+        self.current_settlement_key = key2
+        self.at_home = True
+
       elif ('You are entering ' in msg):
         s = msg[msg.find('You are entering'):]
         s = s.replace('You are entering ','').replace('a ','').replace('an ','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
 
         key = f'{x}:{y}'
         if (self.in_settlement):
-          if key in settlements:
+          key2 = self.Check_Key_Is_Near(key, settlements)
+          if key2:
+            key = key2
             if settlements[key] != s:
               settlements[key] = s
         # self.current_settlement_key = key
@@ -595,14 +625,18 @@ class URL_Calendar():
       elif ('withdraws' in msg):
         if self.in_settlement:
           key = f'{x}:{y}'
+          key2 = self.Check_Key_Is_Near(key, settlements)
+          if key2:
+            key = key2
+
           if (settlements[key] == "settlement"):
             s = msg.replace('The ','').replace('tribesman ','').replace('Old ','').replace('boy ','').replace('Maiden ','').replace('woodsman ','').replace('man ','').replace('hunter ','').replace(' withdraws from your way.','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
             settlements[key] = s + ' ' + settlements[key]
       elif ('Zooming in ...' in msg):
         key = f'{x}:{y}'
-        if (key in markers):
-          if (markers[key].lower() == 'home'):
-            self.at_home = True
+        key2 = self.Check_Key_Is_Near(key, markers, 'home')
+        if key2:
+          self.at_home = True
       elif ('Zooming out ...' in msg):
         
         if (self.in_settlement):
@@ -611,9 +645,11 @@ class URL_Calendar():
             self.current_settlement_key = f'{x}:{y}'
           self.Tally_Village_Goods(self.current_settlement_key)
           self.current_settlement_key = None
+          self.revisited_tile = -1
         elif (self.at_home):
           self.Tally_Village_Goods('home')
           self.at_home = False
+          self.revisited_tile = -1
       elif ('You see a marked location' in msg):
         text = msg.split('\"')
         key = f'{x}:{y}'
@@ -676,11 +712,15 @@ class URL_Calendar():
         self.Parse_Long_Process(lines, i, msg, textile, 'Retting')
       elif ('tendons are now left to dry, after which you can proceed to separate the sinew fibre.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Tendons')
-      elif ('The retted nettles are now set in loose bundles to dry out fully, after which you can proceed with extracting the fibre.' in msg):
+      elif ('The retted nettles are now set in loose bundles to dry out fully, after which you can proceed to extract the fibre.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Nettles')
       elif (self.in_settlement or self.at_home):
         if ('Things that are here:' in msg or 'There are several objects here:' in msg):
           self.Parse_Items_On_Ground(lines, i)
+        elif ('You pick up' in msg):
+          self.Pick_Up_Items_On_Ground(msg)
+        elif ('You drop' in msg):
+          self.Drop_Items_On_Ground(msg)
       
       self.fow.add((x,y))
 
@@ -945,9 +985,85 @@ class URL_Calendar():
       # don't count the same tiles multiple times
       # still an issue if you pick something up, it then it counts the rest twice...
       # too lazy to subtract stuff that gets picked up from the tiles contents
-      pass
+      self.revisited_tile = self.temp_village_content.index(items)
     else:
       self.temp_village_content.append(items)
+  def Pick_Up_Items_On_Ground(self, line):
+    items = []
+    if('cut' in line):
+      item = line = line.replace('You pick up the ', '')[:-1]
+      tokens = line.split(' ')
+      number=0
+      try:
+        number = int(tokens[0])
+        item = line.replace(tokens[0]+' ', '')
+        if item.endswith('s'):
+          item = item[:-1]
+      except:
+        number = 1
+      #for i in range(len(self.temp_village_content[self.revisited_tile])):
+      #  print(self.temp_village_content[self.revisited_tile][i])
+      i = 0
+      if (self.temp_village_content):
+        for content in self.temp_village_content[self.revisited_tile]:
+          if (item in content):
+            tokens = content.split(' ')
+            num_items_present=0
+            try:
+              num_items_present = int(tokens[0])
+            except:
+              num_items_present = 1
+          
+            num_items_new = num_items_present-number
+            if (num_items_new == 0):
+              self.temp_village_content[self.revisited_tile].remove(content)
+            elif (num_items_new == 1):
+              if content.endswith('s'):
+                content = content[:-1]
+              self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '1')
+            else:
+              self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '%d'%num_items_new)
+          i += 1
+          
+
+    return
+
+  def Drop_Items_On_Ground(self, line):
+    items = []
+    if('cut' in line):
+      item = line = line.replace('You drop the ', '')[:-1]
+      tokens = line.split(' ')
+      number=0
+      try:
+        number = int(tokens[0])
+        item = line.replace(tokens[0]+' ', '')
+        if item.endswith('s'):
+          item = item[:-1]
+      except:
+        number = 1
+      #for i in range(len(self.temp_village_content[self.revisited_tile])):
+      #  print(self.temp_village_content[self.revisited_tile][i])
+      found = False
+      i = 0
+      if (self.temp_village_content):
+        for content in self.temp_village_content[self.revisited_tile]:
+          found = True
+          if (item in content):
+            tokens = content.split(' ')
+            num_items_present=0
+            try:
+              num_items_present = int(tokens[0])
+            except:
+              num_items_present = 1
+          
+            num_items_new = num_items_present+number
+            
+            self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '%d'%num_items_new)
+          i += 1
+      if not found:
+        self.temp_village_content[self.revisited_tile].append(item)
+
+    return
 
   def Tally_Village_Goods(self, key):
     temp_village_goods = {}
@@ -957,7 +1073,8 @@ class URL_Calendar():
         count_this = False
         if (key == 'home'):
           if('cut' in item):
-            count_this = True
+            if ('spoiled' not in item):
+              count_this = True
         else:
           count_this = True
         if (count_this):
