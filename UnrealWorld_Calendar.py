@@ -6,6 +6,7 @@ import re
 import json
 import time
 import csv
+import GameDateTime as gdt
 from pathlib import Path
 import numpy as np
 from collections import defaultdict
@@ -83,7 +84,6 @@ class URL_Calendar():
     self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption('Unreal World Calendar')
 
-    
     # Fonts
     self.FONT = pygame.font.SysFont('Arial', 12)
     self.BOLD_FONT = pygame.font.SysFont('Arial', 14, bold=True)
@@ -110,110 +110,6 @@ class URL_Calendar():
       return 'fall'
     else:
       return 'winter'
-
-  def Parse_Timestamp(self, ts):
-      if len(ts) != 4:
-        print('timstamp has wrong length: \'%s\''%ts)
-        return None
-      try:
-          day = char_to_num[ts[0]]
-          month = char_to_num[ts[1]]
-          year = char_to_num[ts[2]] + 1200 - 15
-          hour = char_to_num[ts[3]]  # not real hours, just relative
-          return {'day': day, 'month': month, 'year': year, 'hour': hour}
-      except:
-          print ('error parsing timestamp: \'%s\''%ts)
-          return None
-
-  def Check_Date_Is_Before_Or_After(self, date_to_check, check_against):
-    if (date_to_check[2] < check_against[2]):
-      # this year is before check year
-      return BEFORE
-    else:
-      if (date_to_check[2] == check_against[2]):
-        # same year
-        if (date_to_check[1] < check_against[1]):
-          # this month is before check month
-          return BEFORE
-        else:
-          if (date_to_check[1] == check_against[1]):
-            # same month
-            if (date_to_check[0] < check_against[0]):
-              # this day is before check day
-              return BEFORE
-            else:
-              if (date_to_check[0] == check_against[0]):
-                # same day
-                if (date_to_check[3] < check_against[3]):
-                  # this hour is before check hour
-                  return BEFORE
-                else:
-                  if (date_to_check[3] == check_against[3]):
-                    # same hour
-                    return EQUAL
-    return AFTER
-
-  def Check_Date_Is_Between(self, date_to_check, start_date, end_date, inclusive = 0):
-    after_first = False
-    before_last = False
-    if (inclusive == NONE) or (inclusive == SECOND):
-      if (self.Check_Date_Is_Before_Or_After(date_to_check, start_date) == AFTER):
-        after_first = True
-    else:
-      if (self.Check_Date_Is_Before_Or_After(date_to_check, start_date) != BEFORE): # could be equal or after
-        after_first = True
-    if (inclusive == NONE) or (inclusive == FIRST):
-      if (self.Check_Date_Is_Before_Or_After(date_to_check, end_date) == BEFORE):
-        before_last = True
-    else:
-      if (self.Check_Date_Is_Before_Or_After(date_to_check, end_date) != AFTER): # could be equal or before
-        before_last = True
-    return (after_first and before_last)
-
-  def Game_Date_To_Datetime(self, gd):
-    return '%d.%d.%d %d'%(gd['day'], gd['month'], gd['year'], gd['hour'])
-
-  def Add_Game_Days(self, start, days):
-      result = start.copy()
-      for _ in range(days):
-          result['day'] += 1
-          if result['day'] > days_per_month[result['month']]:
-              result['day'] = 1
-              result['month'] += 1
-              if result['month'] > 12:
-                  result['month'] = 1
-                  result['year'] += 1
-      return result
-
-  def To_Str_Date(self, gd):
-    return self.Game_Date_To_Datetime(gd)
-
-  def Str_Date_To_Array(self, date_str):
-    parts = date_str.replace('.', ' ').split()
-    return list(map(int, parts))
-
-  def Convert_To_Calendar_Day(self, day, month):
-    calendar_day = day
-    for i in range(1, month):
-      calendar_day+=days_per_month[i]
-    return calendar_day
-
-  def Convert_From_Calendar_Day(self, calendar_day, year, hour = 0):
-    day = calendar_day
-    month = 1
-    for i in range(1,13):
-      if (day > days_per_month[i]):
-        day -= days_per_month[i]
-        month += 1
-      else:
-        break
-    return {'day': day, 'month': month, 'year': year, 'hour': hour}
-
-  def Convert_Calendar_Day_2_Week_Day(self, calendar_day):
-    weekday = calendar_day%7
-    if weekday == 0:
-      weekday = 7
-    return weekday
 
   def Load_Json(self, path):
       if not os.path.exists(path):
@@ -262,8 +158,8 @@ class URL_Calendar():
 
     x_perc = chunk_x_frac - chunk_x
     y_perc = chunk_y_frac - chunk_y
-
-    print ('tile-%d-%d-%d.png'%(chunk_x,chunk_y, self.zoom_level))
+    if DEBUG:
+      print ('tile-%d-%d-%d.png'%(chunk_x,chunk_y, self.zoom_level))
 
     neighbor = []
     if x_perc <= 0.5:
@@ -484,10 +380,11 @@ class URL_Calendar():
     x = 0
     y = 0
     if 'last_ts' not in self.progress:
-      print('New file being created')
+      if DEBUG:
+        print('New file being created')
       self.progress['last_ts'] = '0000'
     else:
-      self.current_timestamp = self.Parse_Timestamp(self.progress['last_ts'])
+      self.current_timestamp = gdt.GameDateTime(self.progress['last_ts'])
     if 'repeats' not in self.progress:
       self.progress['repeats'] = 0
     if 'chores' in self.progress:
@@ -500,7 +397,7 @@ class URL_Calendar():
       self.last_coord_str = self.progress['last coordinate']
     if (DEBUG):
       print(self.progress)
-      print(self.current_timestamp)
+      self.current_timestamp.Print()
 
     trees_felled = self.state.get('trees_felled', 0)
     fires_made = self.state.get('fires_made', 0)
@@ -533,7 +430,8 @@ class URL_Calendar():
         for x_, y_ in reader:
           self.fow.add((int(x_), int(y_)))
           fog_values_loaded += 1
-    print (fog_values_loaded, 'fog values loaded')
+    if DEBUG:
+      print (fog_values_loaded, 'fog values loaded')
     prev_fow_size = len(self.fow)
 
     with open(LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:  # Adding 'errors='replace''
@@ -552,24 +450,30 @@ class URL_Calendar():
           print('Line not parsed: ', line)
         continue
 
-      color, ts,msg_type,place, msg = m.groups()
+      color, ts, msg_type, place, msg = m.groups()
       x = int(place[0:4], 16)
       y = int(place[4:8], 16)
-      if ts == last_ts: #progress['last_ts']:
+
+      if ts == last_ts:
         repeating_timestamps += 1
       else:
         repeating_timestamps = 0
+
       last_ts = ts
-      if (self.Check_Date_Is_Before_Or_After(ts, self.progress['last_ts']) == BEFORE):
+      gt = gdt.GameDateTime(ts)
+      gt_last_progress = gdt.GameDateTime(self.progress['last_ts'])
+      
+      if (gt < gt_last_progress):
         i += 1
         continue
       else:
-        if(self.Check_Date_Is_Before_Or_After(ts, self.progress['last_ts']) == EQUAL) and (repeating_timestamps <= self.progress['repeats']):
+        if ((gt==gt_last_progress) and (repeating_timestamps <= self.progress['repeats'])):
           i += 1
           continue
 
-      new_ts = self.Parse_Timestamp(ts)
-      if (not self.current_timestamp) or (new_ts['day'] != self.current_timestamp['day']):
+      new_ts = gt.Copy()
+
+      if (not self.current_timestamp) or (new_ts.day != self.current_timestamp.day):
         self.new_day = True
         self.progress['chores'] = {'Make Fire':{'needed':False, 'done':False},
                                   'Sacrifice':    {'needed':True, 'done':False},
@@ -578,7 +482,7 @@ class URL_Calendar():
                                   'Weatherlore':  {'needed':True, 'done':False}
                                   }
 
-      self.current_timestamp = new_ts
+      self.current_timestamp = new_ts.Copy()
 
       if msg == 'ANIMAL COMMANDS: Dog: I shall name you...':
         self.has_dog = True
@@ -737,6 +641,7 @@ class URL_Calendar():
 
       i += 1
       last_ts = ts
+
     self.progress['last_ts'] = ts
     self.progress['repeats'] = repeating_timestamps
     self.progress['last coordinate'] = f'{x}:{y}'
@@ -764,7 +669,6 @@ class URL_Calendar():
         'buildings': building_counts,
         'village_goods':self.village_goods
     }
-
     self.Save_Json(STATE_FILE, self.new_state)
     self.Save_Json(PROGRESS_FILE, self.progress)
 
@@ -781,18 +685,6 @@ class URL_Calendar():
 
     self.CreateMap((self.last_x, self.last_y))
 
-  def Convert_Weekday_to_Day_Month(self, weekday, week, year, hour):
-    year_day = week * 7 + weekday
-    month = 1
-    for month in range(1,13):
-      if (year_day < days_per_month[month]):
-        day = year_day+1
-        break
-      else:
-        year_day -= days_per_month[month]
-
-    return {'day': day, 'month': month, 'year': year, 'hour': hour}
-
   def Add_Event(self, day, marker):
     if (day in self.event_markers):
       if not marker in self.event_markers[day]: # dont repeat markers
@@ -807,104 +699,78 @@ class URL_Calendar():
     #self.current_timestamp['day']=21 # debug specific dates
     #self.current_timestamp['month']=8 # debug specific dates
 
-    calendar_day_today = self.Convert_To_Calendar_Day(self.current_timestamp['day'], self.current_timestamp['month'])
-    self.current_weekday = self.Convert_Calendar_Day_2_Week_Day(calendar_day_today)
-    calendar_day_start_of_week = calendar_day_today - self.current_weekday + 1
-    date_week_start = self.Convert_From_Calendar_Day(calendar_day_start_of_week, self.current_timestamp['year'], 0)
-    date_week_end = self.Convert_From_Calendar_Day(calendar_day_start_of_week+7, self.current_timestamp['year'], 0)
-    this_weeK_array = [date_week_start['day'],date_week_start['month'],date_week_start['year'],0]
-    this_weeK_array2 = [date_week_end['day'],date_week_end['month'],date_week_end['year'],0]
-
-    today = [self.current_timestamp['day'],self.current_timestamp['month'],self.current_timestamp['year'],0]
-    tomorrow_ = self.Add_Game_Days(self.current_timestamp, 0)
-    tomorrow = [tomorrow_['day'],tomorrow_['month'],tomorrow_['year'],0]
     if 'cooking_processes' in self.new_state:
-      this_year = [1,1,self.current_timestamp['year'],0]
-      next_year = [1,1,self.current_timestamp['year']+1,0]
       for o in self.new_state['cooking_processes']:
-        cooking_end_date = self.Str_Date_To_Array(o['end'])
-        cooking_start_date = self.Str_Date_To_Array(o['start'])
-        cal_day = self.Convert_To_Calendar_Day(cooking_end_date[0], cooking_end_date[1])
-        if (self.Check_Date_Is_Between(cooking_end_date, this_year, next_year, inclusive = FIRST)):
+        cooking_end_date = gdt.GameDateTime(o['end'])
+        cooking_start_date = gdt.GameDateTime(o['start'])
+        if (cooking_end_date.year == self.current_timestamp.year):
           if o['type'] == 'Drying Food':
-            self.Add_Event(cal_day, 'D')
+            self.Add_Event(cooking_end_date.calendar_day, 'D')
           elif o['type'] == 'Smoking':
-            self.Add_Event(cal_day, 'S')
-            if (self.Check_Date_Is_Before_Or_After(cooking_end_date, this_weeK_array) == AFTER):
+            self.Add_Event(cooking_end_date.calendar_day, 'S')
+            if (cooking_end_date.week >= self.current_timestamp.week):
               s = 1
               e = 8
-              if (self.Check_Date_Is_Before_Or_After(cooking_start_date, this_weeK_array) == AFTER):
-                cooking_start_calenderday = self.Convert_To_Calendar_Day(cooking_start_date[0], cooking_start_date[1])
-                cooking_start_weekday = self.Convert_Calendar_Day_2_Week_Day(cooking_start_calenderday)
-                s = cooking_start_weekday
-              if (self.Check_Date_Is_Before_Or_After(cooking_end_date, this_weeK_array2) == BEFORE):
-                cooking_end_calenderday = self.Convert_To_Calendar_Day(cooking_end_date[0], cooking_end_date[1])
-                cooking_end_weekday = self.Convert_Calendar_Day_2_Week_Day(cooking_end_calenderday)
-                e = cooking_end_weekday+1
+              if (cooking_start_date.week == self.current_timestamp.week):
+                s = cooking_start_date.weekday
+              if (cooking_end_date.week == self.current_timestamp.week):
+                e = cooking_end_date.weekday+1
               for d in range(s, e):
                 self.weekly_events[(d, 5)].append('Make Fire')
-              if (self.current_weekday >= s and self.current_weekday <= e):
+              if (self.current_timestamp.weekday >= s and self.current_timestamp.weekday <= e):
                 self.progress['chores']['Make Fire']['needed'] = True
-        if (self.Check_Date_Is_Between(cooking_end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
-          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(cooking_end_date[0], cooking_end_date[1]))
+        if (cooking_end_date.week == self.current_timestamp.week):
+          d_w = cooking_end_date.weekday
           if o['type'] == 'Drying Food':
-            self.weekly_events[(d_w, cooking_end_date[3])].append('Drying')
+            self.weekly_events[(d_w, cooking_end_date.hour)].append('Drying')
           elif o['type'] == 'Smoking':
-            self.weekly_events[(d_w, cooking_end_date[3])].append('Smoking')
+            self.weekly_events[(d_w, cooking_end_date.hour)].append('Smoking')
 
-        if (cal_day == calendar_day_today):
-          if (self.Check_Date_Is_Before_Or_After(cooking_end_date, tomorrow) == BEFORE):
-            self.todays_events[cooking_end_date[3]] = o['amount']
+        if (cooking_end_date.day == self.current_timestamp.day):
+          self.todays_events[cooking_end_date.hour] = o['amount']
 
     if 'tanning_processes' in self.new_state:
-      this_year = [1,1,self.current_timestamp['year'],0]
-      next_year = [1,1,self.current_timestamp['year']+1,0]
       for t in self.new_state['tanning_processes']:
-        tanning_end_date = self.Str_Date_To_Array(t['end'])
-        cal_day = self.Convert_To_Calendar_Day(tanning_end_date[0], tanning_end_date[1])
-        if (self.Check_Date_Is_Between(tanning_end_date, this_year, next_year, inclusive = FIRST)):
+        tanning_end_date = gdt.GameDateTime(t['end'])
+        cal_day = tanning_end_date.calendar_day
+        if (tanning_end_date.year == self.current_timestamp.year):
           self.Add_Event(cal_day, 'T')
-        if (cal_day == calendar_day_today):
-          if (self.Check_Date_Is_Before_Or_After(tanning_end_date, tomorrow) == BEFORE):
-            self.todays_events[tanning_end_date[3]] = 'tanning'
-        if (self.Check_Date_Is_Between(tanning_end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
-          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(tanning_end_date[0], tanning_end_date[1]))
-          self.weekly_events[(d_w, tanning_end_date[3])].append('Tanning')
+        
+        if (cal_day == self.current_timestamp.calendar_day):
+          self.todays_events[tanning_end_date.hour] = 'tanning'
+
+        if (tanning_end_date.week == self.current_timestamp.week):
+          d_w = tanning_end_date.weekday
+          self.weekly_events[(d_w, tanning_end_date.hour)].append('Tanning')
 
     if 'textile_processes' in self.new_state:
-      this_year = [1,1,self.current_timestamp['year'],0]
-      next_year = [1,1,self.current_timestamp['year']+1,0]
       for t in self.new_state['textile_processes']:
-        end_date = self.Str_Date_To_Array(t['end'])
-        cal_day = self.Convert_To_Calendar_Day(end_date[0], end_date[1])
-        if (self.Check_Date_Is_Between(end_date, this_year, next_year, inclusive = FIRST)):
+        end_date = gdt.GameDateTime(t['end'])
+        cal_day = end_date.calendar_day
+        if (end_date.year == self.current_timestamp.year):
           if (t['type'] == 'Retting'):
             self.Add_Event(cal_day, 'R')
           elif (t['type'] == 'Drying Nettles'):
             self.Add_Event(cal_day, 'd')
           elif (t['type'] == 'Drying Tendons'):
             self.Add_Event(cal_day, 't')
-        if (cal_day == calendar_day_today):
-          if (self.Check_Date_Is_Before_Or_After(end_date, tomorrow) == BEFORE):
-            self.todays_events[end_date[3]] = t['type']
-        if (self.Check_Date_Is_Between(end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
-          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(end_date[0], end_date[1]))
-          self.weekly_events[(d_w, end_date[3])].append(t['type'])
+        if (cal_day == self.current_timestamp.calendar_day):
+          self.todays_events[end_date.hour] = t['type']
+        if (end_date.week == self.current_timestamp.week):
+          d_w = end_date.weekday
+          self.weekly_events[(d_w, end_date.hour)].append(t['type'])
 
     if 'blacksmith_processes' in self.reminders:
-      this_year = [1,1,self.current_timestamp['year'],0]
-      next_year = [1,1,self.current_timestamp['year']+1,0]
-      for t in self.reminders['blacksmith_processes']:
-        end_date = self.Str_Date_To_Array(t['finish'])
-        cal_day = self.Convert_To_Calendar_Day(end_date[0], end_date[1])
-        if (self.Check_Date_Is_Between(end_date, this_year, next_year, inclusive = FIRST)):
+      for b in self.reminders['blacksmith_processes']:
+        end_date = gdt.GameDateTime(b['finish'])
+        cal_day = end_date.calendar_day
+        if (end_date.year == self.current_timestamp.year):
           self.Add_Event(cal_day, 'B')
-        if (cal_day == calendar_day_today):
-          if (self.Check_Date_Is_Before_Or_After(end_date, tomorrow) == BEFORE):
-            self.todays_events[end_date[3]] = t['type']
-        if (self.Check_Date_Is_Between(end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
-          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(end_date[0], end_date[1]))
-          self.weekly_events[(d_w, end_date[3])].append(t['type'])
+        if (cal_day == self.current_timestamp.calendar_day):
+          self.todays_events[end_date.hour] = b['type']
+        if (end_date.week == self.current_timestamp.week):
+          d_w = end_date.weekday
+          self.weekly_events[(d_w, end_date.hour)].append(b['type'])
 
   def Look_For_Tally_Items(self, search_string,msg,  tally_var):
     if search_string in msg:
@@ -952,42 +818,40 @@ class URL_Calendar():
             duration = int(m.group(1))
       if duration:
         if self.current_timestamp:
+          end_date = self.current_timestamp + duration
           if (amount):
             item.append({
               'type': process_type,
               'amount': amount,
-              'start': self.To_Str_Date(self.current_timestamp),
-              'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
+              'start': self.current_timestamp.GetDateTime(),
+              'end': end_date.GetDateTime()
             })
           else:
             item.append({
               'type': process_type,
-              'start': self.To_Str_Date(self.current_timestamp),
-              'end': self.To_Str_Date(self.Add_Game_Days(self.current_timestamp, duration))
+              'start': self.current_timestamp.GetDateTime(),
+              'end': end_date.GetDateTime()
             })
           break
 
   def Parse_Short_Process(self, msg, item):
     if self.current_timestamp:
-      start_date = self.current_timestamp.copy()
-      end_date = self.current_timestamp.copy()
+      start_date = self.current_timestamp.Copy()
+      end_date = self.current_timestamp.Copy()
       end_date_text = msg.split('.')[0]
       if ('a few hours' in end_date_text):
-        end_date['hour'] +=2
-        if (end_date['hour'] > 23):
-          end_date = self.Add_Game_Days(end_date,1)
-          end_date['hour'] = end_date['hour']-24
+        end_date.hour +=2
+        if (end_date.hour > 23):
+          end_date += 1
       elif 'This step is complete by ' in msg:
         time = msg[msg.find(' by ')+4:msg.find('.')]
-        for h in range(len(string_timeofday)):
-          if time.strip() == string_timeofday[h].lower():
-            break
-        if h < start_date['hour']:
-          end_date = self.Add_Game_Days(end_date,1)
-        end_date['hour'] = h
+        h = end_date.GetTimeOfDayFromString(time)
+        if h < start_date.hour:
+          end_date += 1
+        end_date.hour = h
       item.append({
-          'start': self.To_Str_Date(self.current_timestamp),
-          'end': self.To_Str_Date(end_date),
+          'start': start_date.GetDateTime(),
+          'end': end_date.GetDateTime(),
           'timeframe': end_date_text
       })
 
@@ -1052,7 +916,8 @@ class URL_Calendar():
             best_match = match_perc
             fuzzy_best_index = i
     if best_match > .5:
-      print('Fuzzy match: ',best_match)
+      if DEBUG:
+        print('Fuzzy match: ',best_match)
       return fuzzy_best_index, True
     else:
       return None, False
@@ -1256,7 +1121,7 @@ class URL_Calendar():
       x = MARGIN_X + i * COL_WIDTH
       y = MARGIN_Y
       rect = pygame.Rect(x, y, COL_WIDTH, HEADER_HEIGHT)
-      color = CURRENT_DAY_COLOR if i == (self.current_weekday-1) else HEADER_BG
+      color = CURRENT_DAY_COLOR if i == (self.current_timestamp.weekday-1) else HEADER_BG
       pygame.draw.rect(calendar_surface, color, rect, border_radius=3)
 
       text = self.font_bold_wk_cal.render(day, True, TEXT_COLOR)
@@ -1272,7 +1137,7 @@ class URL_Calendar():
       label_rect = label.get_rect(right=MARGIN_X - 5, centery=y)
       calendar_surface.blit(label, label_rect)
       if (hour < 24):
-        label = self.font_wk_cal.render(string_timeofday[hour], True, HOUR_LABEL_COLOR)
+        label = self.font_wk_cal.render(self.current_timestamp.GetTimeOfDayFromHour(hour), True, HOUR_LABEL_COLOR)
         label_rect = label.get_rect(left=MARGIN_X + 7 * COL_WIDTH, centery=y+8)
         calendar_surface.blit(label, label_rect)
       if (j < len(VISIBLE_HOURS)-1):
@@ -1280,7 +1145,7 @@ class URL_Calendar():
           x = MARGIN_X + i * COL_WIDTH
           cell_rect = pygame.Rect(x, y, COL_WIDTH, HOUR_HEIGHT)
 
-          is_now = i == (self.current_weekday-1) and hour == self.current_timestamp['hour']
+          is_now = i == (self.current_timestamp.weekday-1) and hour == self.current_timestamp.hour
           if is_now:
             pygame.draw.rect(calendar_surface, CURRENT_HOUR_COLOR, cell_rect)
 
@@ -1316,6 +1181,11 @@ class URL_Calendar():
       index +=1
 
     box_y = 0
+    drawing_date = self.current_timestamp.Copy()
+    drawing_date.day = 1
+    drawing_date.month = 1
+    drawing_date.hour = 0
+    drawing_date.Update()
     # Draw weekly columns
     for week in range(display_weeks):
       week_x = 10 + week * week_width
@@ -1328,27 +1198,26 @@ class URL_Calendar():
 
       for d in range(7):
         day_number = week * 7 + d + 1
-        if day_number > total_days:
+        
+        if day_number > drawing_date.GetDaysPerYear():
           break
 
         box_y = self.calendar_year_y + d * (box_height + 1)
         rect = pygame.Rect(week_x, box_y, box_width, box_height)
 
         # Fill each box by season
-        season = self.Get_Season(day_number)
+        season = drawing_date.GetSeason()
         pygame.draw.rect(self.screen, SEASON_COLORS[season], rect)
         w = 1
-        drawing_date = self.Convert_Weekday_to_Day_Month(d, week, 1, 1)
         #current_timestamp['day'] = 20
         #current_timestamp['month'] = 11
-        if (drawing_date['day'] == self.current_timestamp['day'] and drawing_date['month'] == self.current_timestamp['month']):
+        if (drawing_date.day == self.current_timestamp.day and drawing_date.month == self.current_timestamp.month):
           w = 2
         pygame.draw.rect(self.screen, BLACK, rect, w)
 
         if (self.menu_pos[0] >= week_x) and (self.menu_pos[0] < week_x+box_width):
           if (self.menu_pos[1] >= box_y) and (self.menu_pos[1] < box_y+box_height):
-            drawing_date['year'] = self.current_timestamp['year']
-            self.menu_date = drawing_date
+            self.menu_date = drawing_date.Copy()
 
         # Draw 1-7 day number inside week
         #daystring = '%d %d/%d'%(d+1, drawing_date['day'], drawing_date['month'])
@@ -1370,13 +1239,15 @@ class URL_Calendar():
               mouse_pos = pygame.mouse.get_pos()
               if (mouse_pos[0] >= week_x) and (mouse_pos[0] < week_x+box_width):
                 if (mouse_pos[1] >= box_y) and (mouse_pos[1] < box_y+box_height):
-                  drawing_date['year'] = self.current_timestamp['year']
 
                   if 'blacksmith_processes' in self.reminders:
                     for events in self.reminders['blacksmith_processes']:
-                      if (events['finish'] == self.Game_Date_To_Datetime(drawing_date)):
+                      blacksmith_date = gdt.GameDateTime(events['finish'])
+                      if (blacksmith_date.IsSameDayAs(drawing_date)):
                         self.highlight = events['location']
-      
+        
+        drawing_date += 1
+
     row_y = box_y + box_height + 3
     row_height = 18
     # Draw Drying time
@@ -1418,7 +1289,6 @@ class URL_Calendar():
 
 
     # Draw Birch Bark Time, Nettles Time
-    
     row_y += row_height + 3
     starting_month = self.birch_bark_months[0]-1
     if (starting_month == 0):
@@ -1689,20 +1559,9 @@ SEASON_COLORS = {
 LOG_FILE = 'msglog.txt'
 STATE_FILE = 'state.json'
 PROGRESS_FILE = 'progress.json'
+REMINDERS_FILE = 'reminders.json'
 FOW_FILE = 'fog_of_war.csv'
 TILES_PATH = 'tiles\\'
-
-# game calendar info
-days_per_month = {i: 30 for i in range(1, 13)}
-days_per_month[1] = 32
-days_per_month[7] = 32
-total_days = sum(days_per_month.values())
-total_weeks = (total_days + 6) // 7
-
-# character time encoding: 1-9, a-z
-time_chars = '0123456789abcdefghijklmnopqrstuvwxyz'
-char_to_num = {c: i for i, c in enumerate(time_chars)}
-string_timeofday = ['Midnight', 'After midnight','Small hours','','Early morning','','','Morning','','Late Morning', '', 'Noon', '', 'Early afternoon', 'Afternoon', 'Late afternoon', '', 'Early evening', '', 'Evening', 'Late evening', '', 'Night', 'Late night']
 
 # Layout for weekly columns
 box_width = 27
