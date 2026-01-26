@@ -32,6 +32,7 @@ class URL_Calendar():
     self.weekly_events = {}
     self.tally_stats = {}
     self.temp_village_content = []
+    self.fuzzy_village_content = []
     self.logfile_changed_ts = None
     self.current_timestamp = None
     self.current_weekday = None
@@ -42,6 +43,7 @@ class URL_Calendar():
     self.current_settlement_key = None
     self.village_goods = {}
     self.food_storage = {}
+    self.blacksmith = {}
     self.revisited_tile = -1
     self.fow = set()
     self.zoom_level = 3
@@ -50,7 +52,12 @@ class URL_Calendar():
     self.map_surface = None
     self.fog_surface = None
     self.map_rect = None
+    self.world_anchor = (0,0)
+    self.highlight = None
     self.no_tiles = True
+    self.menu_open = False
+    self.menu_pos = (-1, -1)
+    self.menu_date = None
     self.map_tiles = [2730, 2048]
     self.tiles_sizes = [[0,0],[1.125,1.25], [2.25,2.5],[4.5,5],[9,10],[18,20]]
     self.months = ['Center',
@@ -248,7 +255,7 @@ class URL_Calendar():
     chunk_x_frac, chunk_y_frac = self.WorldCoord2Chunk(coordinates[0], coordinates[1], self.zoom_level)
 
     chunk_anchor = (0,0)
-    world_anchor = (0,0)
+    self.world_anchor = (0,0)
 
     chunk_x = int(chunk_x_frac)
     chunk_y = int(chunk_y_frac)
@@ -276,7 +283,7 @@ class URL_Calendar():
 
     chunk_anchor = [min(chunk_x, x_neighbor), min(chunk_y, y_neighbor)]
     wa_x, wa_y = self.Chunk2WorldCoord(chunk_anchor[0], chunk_anchor[1], self.zoom_level)
-    world_anchor = ((wa_x), (wa_y))
+    self.world_anchor = ((wa_x), (wa_y))
 
     img_w, img_h = (2*512, 2*512)
     chunk_surfaces = {}
@@ -305,8 +312,8 @@ class URL_Calendar():
         x_coord = int(x)
         y_coord = int(y)
         
-        local_x_coord = x_coord-world_anchor[0]
-        local_y_coord = y_coord-world_anchor[1]
+        local_x_coord = x_coord-self.world_anchor[0]
+        local_y_coord = y_coord-self.world_anchor[1]
 
         if ((local_x_coord >= 0) and (local_x_coord < 2*512/tile_w)):
           if ((local_y_coord >= 0) and (local_y_coord < 2*512/tile_h)):
@@ -350,7 +357,7 @@ class URL_Calendar():
       # -------------------------------------------------
       # Camera state
       # -------------------------------------------------
-      coordinates_image = (tile_w*(coordinates[0] - world_anchor[0]), tile_h*(coordinates[1]- world_anchor[1]))
+      coordinates_image = (tile_w*(coordinates[0] - self.world_anchor[0]), tile_h*(coordinates[1]- self.world_anchor[1]))
 
       camera_x = coordinates_image[0] - self.map_width // 2
       camera_y = coordinates_image[1] - self.map_height // 2
@@ -387,8 +394,8 @@ class URL_Calendar():
       for key in settlements:
         key_split = key.split(':')
 
-        marker_loc = (tile_w * (int(key_split[0]) - world_anchor[0]),
-                      tile_h *(int(key_split[1]) - world_anchor[1]))
+        marker_loc = (tile_w * (int(key_split[0]) - self.world_anchor[0]),
+                      tile_h *(int(key_split[1]) - self.world_anchor[1]))
 
         center = (marker_loc[0]+0.5*tile_w,marker_loc[1]+0.5*tile_h)
         width = max(tile_w, 10)
@@ -405,8 +412,8 @@ class URL_Calendar():
         name = markers[key]
         key_split = key.split(':')
         if name.lower() == 'home':
-          marker_loc = (tile_w * (int(key_split[0]) - world_anchor[0]),
-                        tile_h * (int(key_split[1]) - world_anchor[1]))
+          marker_loc = (tile_w * (int(key_split[0]) - self.world_anchor[0]),
+                        tile_h * (int(key_split[1]) - self.world_anchor[1]))
 
           center = (marker_loc[0]+0.5*tile_w,marker_loc[1]+0.5*tile_h)
           width = max(tile_w, 10)
@@ -430,8 +437,8 @@ class URL_Calendar():
               (rect[0]+0.5*width,rect[1]-0.5*height ),
               3)
         else:
-          marker_loc = (tile_w * (int(key_split[0]) - world_anchor[0]),
-                        tile_h * (int(key_split[1]) - world_anchor[1]))
+          marker_loc = (tile_w * (int(key_split[0]) - self.world_anchor[0]),
+                        tile_h * (int(key_split[1]) - self.world_anchor[1]))
           center = (marker_loc[0]+0.5*tile_w,marker_loc[1]+0.5*tile_h)
           width = max(tile_w, 10)
           height = max(tile_h, 10)
@@ -473,6 +480,7 @@ class URL_Calendar():
   def Parse_Log(self):
     self.state = self.Load_Json(STATE_FILE)
     self.progress = self.Load_Json(PROGRESS_FILE)
+    self.reminders = self.Load_Json(REMINDERS_FILE)
     x = 0
     y = 0
     if 'last_ts' not in self.progress:
@@ -503,6 +511,7 @@ class URL_Calendar():
     tanning = self.state.get('tanning_processes', [])
     cooking = self.state.get('cooking_processes', [])
     textile = self.state.get('textile_processes', [])
+    self.blacksmith = self.reminders.get('blacksmith_processes', [])
     settlements = self.state.get('settlements',{})
     markers = self.state.get('markers',{})
     self.village_goods = self.state.get('village_goods',{})
@@ -596,12 +605,14 @@ class URL_Calendar():
 
         self.in_settlement = True
         self.temp_village_content = []
+        self.fuzzy_village_content=[]
         key2 = self.Check_Key_Is_Near(key, settlements)
         if (key2 == None):
           settlements[key] = "settlement"
       elif ('You have come at your settlement and enter the familiar and cosy courtyard.' in msg):
         self.in_settlement = True
         self.temp_village_content = []
+        self.fuzzy_village_content=[]
         key = f'{x}:{y}'
         key2 = self.Check_Key_Is_Near(key, markers, 'home')
         self.current_settlement_key = key2
@@ -880,6 +891,21 @@ class URL_Calendar():
           d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(end_date[0], end_date[1]))
           self.weekly_events[(d_w, end_date[3])].append(t['type'])
 
+    if 'blacksmith_processes' in self.reminders:
+      this_year = [1,1,self.current_timestamp['year'],0]
+      next_year = [1,1,self.current_timestamp['year']+1,0]
+      for t in self.reminders['blacksmith_processes']:
+        end_date = self.Str_Date_To_Array(t['finish'])
+        cal_day = self.Convert_To_Calendar_Day(end_date[0], end_date[1])
+        if (self.Check_Date_Is_Between(end_date, this_year, next_year, inclusive = FIRST)):
+          self.Add_Event(cal_day, 'B')
+        if (cal_day == calendar_day_today):
+          if (self.Check_Date_Is_Before_Or_After(end_date, tomorrow) == BEFORE):
+            self.todays_events[end_date[3]] = t['type']
+        if (self.Check_Date_Is_Between(end_date, this_weeK_array, this_weeK_array2, inclusive = FIRST)):
+          d_w = self.Convert_Calendar_Day_2_Week_Day(self.Convert_To_Calendar_Day(end_date[0], end_date[1]))
+          self.weekly_events[(d_w, end_date[3])].append(t['type'])
+
   def Look_For_Tally_Items(self, search_string,msg,  tally_var):
     if search_string in msg:
       tally_var += 1
@@ -965,10 +991,79 @@ class URL_Calendar():
           'timeframe': end_date_text
       })
 
+  def Get_Item_Group_From_Unique_Name (self, name):
+    return name.replace('spoiled ', '').replace('stale ', '').replace('tasty ', '').replace('bland ', '')
+
+  def Check_Food_Items_Are_Same(self, parse_items, fuzzy = False):
+    cuts = {}
+    same = False
+    for i in range(len(parse_items)):
+      name, number = self.Parse_Item_Msg_Line(parse_items[i])
+      itemgroup = self.Get_Item_Group_From_Unique_Name(name)
+      if itemgroup in cuts:
+        cuts[itemgroup] += number
+      else:
+        cuts[itemgroup] = number
+    
+    cuts2 = []
+    cuts2_fuzzy = []
+    for k in range(len(self.temp_village_content)):
+      items = self.temp_village_content[k]
+      cuts2.append({})
+      if k in self.fuzzy_village_content:
+        cuts2_fuzzy.append(True)
+      else:
+        cuts2_fuzzy.append(False)
+      for i in range(len(items)):
+        name, number = self.Parse_Item_Msg_Line(items[i])
+        itemgroup = self.Get_Item_Group_From_Unique_Name(name)
+        if itemgroup in cuts2[k]:
+          cuts2[k][itemgroup] += number
+        else:
+          cuts2[k][itemgroup]=number
+    index = None
+    for i in range(len(cuts2)):
+      if (cuts2[i] == cuts):
+        same = True
+        return i, False
+
+    fuzzy_best_index = None
+    best_match = 0
+    if index == None:
+      for i in range(len(cuts2)):
+        #if (cuts2_fuzzy[i]):
+        if (True):
+          sum_match = 0
+          sum_all = 0
+          match_perc = 0
+          for m in cuts:
+            found = False
+            for k in cuts2[i]:
+              if k == m:
+                sum_match += cuts[m]
+                sum_all += cuts2[i][k]
+                found = True
+                continue
+            if not found:
+              sum_all += cuts[m]
+          if (sum_all > 0):
+            match_perc = sum_match / sum_all
+          if best_match < match_perc:
+            best_match = match_perc
+            fuzzy_best_index = i
+    if best_match > .5:
+      print('Fuzzy match: ',best_match)
+      return fuzzy_best_index, True
+    else:
+      return None, False
+      
   def Parse_Items_On_Ground(self, lines, i):
     items = []
+    cuts_at_home = False
+    fuzzy = False
     for j in range(i+1, min(i+100, len(lines))):
       line = lines[j]
+      
       if (line.startswith('(000000)')): # when the color is not black, its not an item on the ground
         match = re.search(r"\[(.*?)\]", line)
         if match:
@@ -976,34 +1071,61 @@ class URL_Calendar():
           if (hotkey.isupper()): # Uppercase letters indicate things that are not laying on ground, but are rather persons or building types
             break
         if ('called' in line): # dont count your named animal
-          break
+          continue
+        if (self.at_home):
+          if ('cut' not in line):
+            continue
+          elif ('(being prepared)' in line):
+            continue
+          else:
+            cuts_at_home = True
         items.append(line.split('| ')[1].strip())
-      else:
+      elif ('...and ' in line):
+        fuzzy = True
         break
+      elif ('You ' in line):
+        break
+    if items:
+      if (cuts_at_home):
+        index, fuzzy_matched = self.Check_Food_Items_Are_Same(items, fuzzy)
+        if (index is not None):
+          self.revisited_tile = index
+          if (fuzzy):
+            self.fuzzy_village_content.append(index)
+            self.temp_village_content[index]=items
+        else:
+          self.temp_village_content.append(items)
+          if (fuzzy):
+            self.fuzzy_village_content.append(len(self.temp_village_content)-1)
+      else:
+        if items in self.temp_village_content:
+          # don't count the same tiles multiple times
+          # still an issue when pushing items, but we usually dont push food, so I will ignore it for now
+          self.revisited_tile = self.temp_village_content.index(items)
+        else:
+          self.temp_village_content.append(items)
 
-    if items in self.temp_village_content:
-      # don't count the same tiles multiple times
-      # still an issue if you pick something up, it then it counts the rest twice...
-      # too lazy to subtract stuff that gets picked up from the tiles contents
-      self.revisited_tile = self.temp_village_content.index(items)
-    else:
-      self.temp_village_content.append(items)
+  def Parse_Item_Msg_Line(self, line):
+    number = 0
+    name = line
+    tokens = line.split(' ')
+    try:
+      number = int(tokens[0])
+      name = line.replace(tokens[0]+' ', '')
+      if name.endswith('s'):
+        name = name[:-1]
+    except:
+      number = 1
+
+    return name, number
+
   def Pick_Up_Items_On_Ground(self, line):
     items = []
     if('cut' in line):
       item = line = line.replace('You pick up the ', '')[:-1]
-      tokens = line.split(' ')
-      number=0
-      try:
-        number = int(tokens[0])
-        item = line.replace(tokens[0]+' ', '')
-        if item.endswith('s'):
-          item = item[:-1]
-      except:
-        number = 1
-      #for i in range(len(self.temp_village_content[self.revisited_tile])):
-      #  print(self.temp_village_content[self.revisited_tile][i])
+      item, number = self.Parse_Item_Msg_Line(line)
       i = 0
+      removed = False
       if (self.temp_village_content):
         for content in self.temp_village_content[self.revisited_tile]:
           if (item in content):
@@ -1013,42 +1135,36 @@ class URL_Calendar():
               num_items_present = int(tokens[0])
             except:
               num_items_present = 1
-          
-            num_items_new = num_items_present-number
-            if (num_items_new == 0):
-              self.temp_village_content[self.revisited_tile].remove(content)
-            elif (num_items_new == 1):
-              if content.endswith('s'):
-                content = content[:-1]
-              self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '1')
-            else:
-              self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '%d'%num_items_new)
+            if (num_items_present >= number):
+              num_items_new = num_items_present-number
+              if (num_items_new == 0):
+                self.temp_village_content[self.revisited_tile].remove(content)
+              elif (num_items_new == 1):
+                if content.endswith('s'):
+                  content = content[:-1]
+                self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '1')
+              else:
+                self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '%d'%num_items_new)
+              removed = True
+              break
           i += 1
+        if not removed:
+          pass
+          #print('Something went wrong, could not remove %s from tile: '%(line),self.temp_village_content[self.revisited_tile])
           
-
     return
 
   def Drop_Items_On_Ground(self, line):
-    items = []
     if('cut' in line):
-      item = line = line.replace('You drop the ', '')[:-1]
-      tokens = line.split(' ')
-      number=0
-      try:
-        number = int(tokens[0])
-        item = line.replace(tokens[0]+' ', '')
-        if item.endswith('s'):
-          item = item[:-1]
-      except:
-        number = 1
-      #for i in range(len(self.temp_village_content[self.revisited_tile])):
-      #  print(self.temp_village_content[self.revisited_tile][i])
+      line = line.replace('You drop the ', '')[:-1]
+      item, number = self.Parse_Item_Msg_Line(line)
       found = False
       i = 0
       if (self.temp_village_content):
         for content in self.temp_village_content[self.revisited_tile]:
-          found = True
+          
           if (item in content):
+            found = True
             tokens = content.split(' ')
             num_items_present=0
             try:
@@ -1059,9 +1175,13 @@ class URL_Calendar():
             num_items_new = num_items_present+number
             
             self.temp_village_content[self.revisited_tile][i] = content.replace('%s'%num_items_present, '%d'%num_items_new)
+            break
           i += 1
-      if not found:
-        self.temp_village_content[self.revisited_tile].append(item)
+        if not found:
+          if (len(self.temp_village_content) > 0):
+            self.temp_village_content[self.revisited_tile].append(line)
+          else:
+            self.temp_village_content.append([line])
 
     return
 
@@ -1073,19 +1193,20 @@ class URL_Calendar():
         count_this = False
         if (key == 'home'):
           if('cut' in item):
-            if ('spoiled' not in item):
-              count_this = True
+            #if ('spoiled' not in item):
+            count_this = True
         else:
           count_this = True
         if (count_this):
-          tokens = item.split(' ')
-          try:
-            number = int(tokens[0])
-            item = item.replace(tokens[0]+' ', '')
-            if item.endswith('s'):
-              item = item[:-1]
-          except:
-            number = 1
+          item, number = self.Parse_Item_Msg_Line(item)
+          # tokens = item.split(' ')
+          # try:
+          #   number = int(tokens[0])
+          #   item = item.replace(tokens[0]+' ', '')
+          #   if item.endswith('s'):
+          #     item = item[:-1]
+          # except:
+          #   number = 1
           num_items+=1
           if item in temp_village_goods:
             temp_village_goods[item] += number
@@ -1094,6 +1215,13 @@ class URL_Calendar():
     # maybe find a better way to handle visits to villages without looking at all items and not overwrite everything
     if (num_items > 0):
       if (key == 'home'):
+        keys_to_remove = []
+        for content in temp_village_goods:
+          if 'spoiled' in content:
+            keys_to_remove.append(content)
+        for key in keys_to_remove:
+            temp_village_goods.pop(key, None)
+
         self.food_storage = temp_village_goods
       else:
         self.village_goods[key] = temp_village_goods
@@ -1173,6 +1301,7 @@ class URL_Calendar():
     self.screen.blit(calendar_surface, (atX, atY))
 
   def Draw_Calendar_Year(self):
+    self.highlight = None
     self.screen.fill(WHITE)
     index = 0
     start = 10
@@ -1204,7 +1333,7 @@ class URL_Calendar():
 
         box_y = self.calendar_year_y + d * (box_height + 1)
         rect = pygame.Rect(week_x, box_y, box_width, box_height)
-              
+
         # Fill each box by season
         season = self.Get_Season(day_number)
         pygame.draw.rect(self.screen, SEASON_COLORS[season], rect)
@@ -1215,6 +1344,11 @@ class URL_Calendar():
         if (drawing_date['day'] == self.current_timestamp['day'] and drawing_date['month'] == self.current_timestamp['month']):
           w = 2
         pygame.draw.rect(self.screen, BLACK, rect, w)
+
+        if (self.menu_pos[0] >= week_x) and (self.menu_pos[0] < week_x+box_width):
+          if (self.menu_pos[1] >= box_y) and (self.menu_pos[1] < box_y+box_height):
+            drawing_date['year'] = self.current_timestamp['year']
+            self.menu_date = drawing_date
 
         # Draw 1-7 day number inside week
         #daystring = '%d %d/%d'%(d+1, drawing_date['day'], drawing_date['month'])
@@ -1232,6 +1366,16 @@ class URL_Calendar():
             y = rect.y + 18 + row * 14
             marker = self.BOLD_FONT.render(e, True, BLACK)
             self.screen.blit(marker, (x, y))
+            if (e == 'B'):
+              mouse_pos = pygame.mouse.get_pos()
+              if (mouse_pos[0] >= week_x) and (mouse_pos[0] < week_x+box_width):
+                if (mouse_pos[1] >= box_y) and (mouse_pos[1] < box_y+box_height):
+                  drawing_date['year'] = self.current_timestamp['year']
+
+                  if 'blacksmith_processes' in self.reminders:
+                    for events in self.reminders['blacksmith_processes']:
+                      if (events['finish'] == self.Game_Date_To_Datetime(drawing_date)):
+                        self.highlight = events['location']
       
     row_y = box_y + box_height + 3
     row_height = 18
@@ -1326,7 +1470,6 @@ class URL_Calendar():
 
     self.screen.blit(storage_text, (pos_x + 12, pos_y + 22))
 
-
   def Draw_Chores(self):
     # Draw Chores Section
     chores_x = 10 + display_weeks * week_width - CAL_WIDTH - self.CHORES_WIDTH - 20
@@ -1375,14 +1518,94 @@ class URL_Calendar():
       stat_text = self.BIG_FONT.render(f'{key}s: {val}', True, BLACK)
       self.screen.blit(stat_text, (chores_x + 10, chores_y + 40 + i * 25))
 
+  def Intersect_Ray_Rect(self, origin, direction, rect):
+    t_values = []
+
+    if direction.x != 0:
+        t1 = (rect.left  - origin.x) / direction.x
+        t2 = (rect.right - origin.x) / direction.x
+        t_values.extend([t1, t2])
+
+    if direction.y != 0:
+        t3 = (rect.top    - origin.y) / direction.y
+        t4 = (rect.bottom - origin.y) / direction.y
+        t_values.extend([t3, t4])
+
+    hits = []
+
+    for t in t_values:
+        if t <= 0:
+            continue
+        p = origin + direction * t
+        #if rect.collidepoint(p):
+        if rect.left <= p.x <= rect.right and rect.top <= p.y <= rect.bottom:
+            hits.append((t, p))
+
+    if not hits:
+        return None
+
+    return min(hits, key=lambda x: x[0])[1]
+
+
   def Draw_Map(self):
     map_x = 10
     map_y = self.lower_screen
-    pygame.draw.rect(self.screen, GRAY, (map_x, map_y, self.map_width, self.map_height))
-    pygame.draw.rect(self.screen, BLACK, (map_x, map_y, self.map_width, self.map_height), 2)
+    this_map_rect = pygame.Rect(map_x, map_y, self.map_width, self.map_height)
+    pygame.draw.rect(self.screen, GRAY, this_map_rect)
+    pygame.draw.rect(self.screen, BLACK, this_map_rect, 2)
     if (self.map_surface):
       self.screen.blit(self.map_surface, (map_x, map_y), self.map_rect)
+      if self.highlight:
+        tile_w = self.tiles_sizes[self.zoom_level][0]
+        tile_h = self.tiles_sizes[self.zoom_level][1]
+        x = int(self.highlight.split(':')[0])
+        y = int(self.highlight.split(':')[1])
+        coordinates_image = (tile_w*(x - self.world_anchor[0]), 
+                             tile_h*(y- self.world_anchor[1]))
+        coordinates_window = (coordinates_image[0]+0.5*tile_w+map_x-self.map_rect[0],coordinates_image[1]+.5*tile_h+map_y-self.map_rect[1])
+        if (coordinates_window[0] >= map_x) and (coordinates_window[0] < map_x+self.map_width) and (coordinates_window[1] >= map_y) and (coordinates_window[1] < map_y+self.map_height):
+          pygame.draw.circle( self.screen,
+                                (0,255,255),
+                                coordinates_window,
+                                max(10, tile_h/2+3),
+                                2)
       self.screen.blit(self.fog_surface, (map_x, map_y), self.map_rect)
+      if self.highlight:
+        tile_w = self.tiles_sizes[self.zoom_level][0]
+        tile_h = self.tiles_sizes[self.zoom_level][1]
+        x = int(self.highlight.split(':')[0])
+        y = int(self.highlight.split(':')[1])
+        coordinates_image = (tile_w*(x - self.world_anchor[0]), 
+                             tile_h*(y- self.world_anchor[1]))
+        coordinates_window = (coordinates_image[0]+0.5*tile_w+map_x-self.map_rect[0],coordinates_image[1]+.5*tile_h+map_y-self.map_rect[1])
+        if (coordinates_window[0] >= map_x) and (coordinates_window[0] < map_x+self.map_width) and (coordinates_window[1] >= map_y) and (coordinates_window[1] < map_y+self.map_height):
+          pass
+        else:
+          center = pygame.Vector2(map_x+self.map_width/2, map_y+self.map_height/2)
+          direction = pygame.Vector2(coordinates_window[0],coordinates_window[1]) - center
+          if direction.length() == 0:
+            pass
+          else:
+
+            direction = direction.normalize()
+            arrow_pos = self.Intersect_Ray_Rect(center, direction, this_map_rect)
+            if arrow_pos is None:
+              pass
+            else:
+              # pygame.draw.line( self.screen,
+              #                       (0,255,255),
+              #                       center,
+              #                       coordinates_window,
+              #                       2)
+              angle = -direction.angle_to(pygame.Vector2(1, 0))
+              perp = pygame.Vector2(-direction.y, direction.x)
+              size = 15
+              tip = arrow_pos# + direction * size
+              left = arrow_pos - direction * size + perp * size * 0.4
+              right = arrow_pos - direction * size - perp * size * 0.4
+
+              pygame.draw.polygon(self.screen, (0,255, 255), [tip, left, right])
+
     else:
       text = self.BIG_FONT.render("No map tiles found in folder: ", True, BLACK)
       self.screen.blit(text, (map_x+5, map_y))
@@ -1402,6 +1625,16 @@ class URL_Calendar():
       print('Download urwmap-0.0.3 from here:\nhttps://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html')
     return
 
+  def Draw_Menu(self):
+    MENU_WIDTH = 120
+    MENU_HEIGHT = 20
+    menu_items = ['Set reminder for:', 'Axe', 'Knife','Needle', 'Arrowheads', 'Spear']
+    if (self.menu_open):
+      for i in range(len(menu_items)):
+        pygame.draw.rect(self.screen, GRAY, (self.menu_pos[0], self.menu_pos[1]+i*MENU_HEIGHT, MENU_WIDTH, MENU_HEIGHT))
+        menu_text = self.BIG_FONT.render(menu_items[i], True, BLACK)
+        self.screen.blit(menu_text, (self.menu_pos[0], self.menu_pos[1]+i*MENU_HEIGHT))
+
   def Draw(self):
     self.Draw_Calendar_Year()
     self.Draw_Weekly_Calendar()
@@ -1409,7 +1642,34 @@ class URL_Calendar():
     self.Draw_Chores()
     self.Draw_Tally()
     self.Draw_Map()
+    self.Draw_Menu()
     pygame.display.flip()
+
+  def ProcessRightMouseButton(self, mouse_pos):
+    self.menu_open = not self.menu_open
+    if (self.menu_open):
+      self.menu_pos = mouse_pos
+
+  def ProcessLeftMouseButton(self, mouse_pos):
+    if (self.menu_open):
+      MENU_WIDTH = 120
+      MENU_HEIGHT = 20
+      menu_items = ['Set reminder for:', 'Axe', 'Knife','Needle', 'Arrowheads', 'Spear']
+      if (mouse_pos[0] >= self.menu_pos[0]) and (mouse_pos[0] < self.menu_pos[0]+MENU_WIDTH):
+        for i in range(len(menu_items)):
+          if (mouse_pos[1] >= self.menu_pos[1]+i*MENU_HEIGHT) and (mouse_pos[1] < self.menu_pos[1]+i*MENU_HEIGHT+MENU_HEIGHT):
+            if i > 0:
+              #print('Selected ',menu_items[i], self.menu_date)
+              self.blacksmith.append({'type': menu_items[i],
+                                      'location': f'{self.last_x}:{self.last_y}',
+                                      'finish': self.To_Str_Date(self.menu_date)
+                                    })
+                
+              self.reminders = {'blacksmith_processes':self.blacksmith}
+              self.Save_Json(REMINDERS_FILE, self.reminders)
+              self.Fill_Events()
+
+            self.menu_open = False
 
 # Colors
 BLACK = (0, 0, 0)
@@ -1493,10 +1753,20 @@ def main():
         pygame.quit()
         sys.exit()
 
+      elif event.type == pygame.MOUSEBUTTONUP:
+        if event.button == 3:
+          last_mouse = event.pos
+          game.ProcessRightMouseButton(event.pos)
+
+      elif event.type == pygame.MOUSEBUTTONDOWN:
+        if event.button == 1:
+          last_mouse = event.pos
+          game.ProcessLeftMouseButton(event.pos)
+
     if (game.File_Has_Changed()):
       game.Parse_Log()
       game.Fill_Events()
-      game.Draw()
+    game.Draw()
     time.sleep(0.050)
 
 if __name__=="__main__":
