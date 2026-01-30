@@ -101,9 +101,9 @@ class GameDateTime():
     if (    (self.year  != other.year ) 
          or (self.month != other.month)
          or (self.day   != other.day  ) ):
-      return True
-    else:
       return False
+    else:
+      return True
 
   def Is_Between(self, start_date, end_date, inclusive = 0):
     NONE = 0
@@ -285,4 +285,4 @@ class GameDateTime():
     return copy.copy(self)
 
   def Print(self):
-    print(self.GetDateTime)
+    print(self.GetDateTime())
