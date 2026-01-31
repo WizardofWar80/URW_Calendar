@@ -551,10 +551,10 @@ class URL_Calendar():
           key2 = self.Check_Key_Is_Near(key, settlements)
           if key2:
             key = key2
-
-          if (settlements[key] == "settlement"):
-            s = msg.replace('The ','').replace('tribesman ','').replace('Old ','').replace('boy ','').replace('Maiden ','').replace('woodsman ','').replace('man ','').replace('hunter ','').replace(' withdraws from your way.','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
-            settlements[key] = s + ' ' + settlements[key]
+          if key in settlements:
+            if (settlements[key] == "settlement"):
+              s = msg.replace('The ','').replace('tribesman ','').replace('Old ','').replace('boy ','').replace('Maiden ','').replace('woodsman ','').replace('man ','').replace('hunter ','').replace(' withdraws from your way.','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
+              settlements[key] = s + ' ' + settlements[key]
       elif ('Zooming in ...' in msg):
         key = f'{x}:{y}'
         key2 = self.Check_Key_Is_Near(key, markers, 'home')
