@@ -19,6 +19,8 @@ pygame.init()
 
 DEBUG = False
 
+print_once = True
+
 SCREEN_WIDTH = 1600
 SCREEN_HEIGHT = 900
 
@@ -84,6 +86,7 @@ class URL_Calendar():
     self.birch_bark_months = [4, 6]
     self.nettle_harvest_months = [7,8]
     self.lower_screen = 0
+    self.menu_items = ['Set reminder for:', 'Axe', 'Knife','Needle', 'Arrowheads', 'Spear', 'Quest']
     # Setup screen
     self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     pygame.display.set_caption('Unreal World Calendar')
@@ -376,7 +379,10 @@ class URL_Calendar():
       for k in range(-dist, dist+1):
         search_key = f'{x+i}:{y+k}'
         if (search_key in my_list):
-          if (name is None or name == my_list[search_key].lower()):
+          list_item = my_list[search_key]
+          if (isinstance(list_item, list)):
+            list_item=list_item[0]
+          if (name is None or name == list_item.lower()):
             return search_key
     return None
 
@@ -407,20 +413,22 @@ class URL_Calendar():
       if self.current_timestamp:
         self.current_timestamp.Print()
 
-    trees_felled = self.state.get('trees_felled', 0)
-    fires_made = self.state.get('fires_made', 0)
+    trees_felled = self.state.get('trees felled', 0)
+    fires_made = self.state.get('fires made', 0)
     sacrifices = self.state.get('sacrifices', 0)
     kills = self.state.get('kills', {})
-    meat_cuts = self.state.get('meat_cuts', {})
-    self.food_storage = self.state.get('stored_food', {})
-    tanning = self.state.get('tanning_processes', [])
-    cooking = self.state.get('cooking_processes', [])
-    textile = self.state.get('textile_processes', [])
-    self.blacksmith = self.reminders.get('blacksmith_processes', [])
+    food_items = self.state.get('food items', {})
+    self.food_storage = self.state.get('stored food', {})
+    tanning = self.state.get('tanning processes', [])
+    cooking = self.state.get('cooking processes', [])
+    textile = self.state.get('textile processes', [])
+    fishing = self.state.get('fishing processes', [])
+    self.blacksmith = self.reminders.get('blacksmith processes', [])
     settlements = self.state.get('settlements',{})
     markers = self.state.get('markers',{})
-    self.village_goods = self.state.get('village_goods',{})
-    tanning_outcomes = self.state.get('tanning_outcomes', {})
+    self.village_goods = self.state.get('village goods',{})
+    names = self.state.get('Names',[])
+    tanning_outcomes = self.state.get('tanning outcomes', {})
     building_counts = self.state.get('buildings', {})
     
     if (self.current_settlement_key):
@@ -492,9 +500,13 @@ class URL_Calendar():
 
       self.current_timestamp = new_ts.Copy()
       #self.current_timestamp.Print()
-      if msg == 'ANIMAL COMMANDS: Dog: I shall name you...':
+      if 'I shall name you...' in msg:
         self.has_dog = True
-
+        for j in range(4):
+          if 'barks.' in lines[i+j]:
+            name = lines[i+j].split(' | ')[1].split(' barks.')[0]
+            names.append(name)
+            break
       trees_felled= self.Look_For_Tally_Items('The tree falls down.',       msg, trees_felled)
       sacrifices  = self.Look_For_Tally_Items('sacrifice',                  msg, sacrifices)
       fires_made  = self.Look_For_Tally_Items('You managed to make a fire', msg, fires_made)
@@ -520,7 +532,7 @@ class URL_Calendar():
         self.fuzzy_village_content=[]
         key2 = self.Check_Key_Is_Near(key, settlements)
         if (key2 == None):
-          settlements[key] = "settlement"
+          settlements[key] = ["settlement"]
       elif ('You have come at your settlement and enter the familiar and cosy courtyard.' in msg):
         self.in_settlement = True
         self.temp_village_content = []
@@ -539,8 +551,8 @@ class URL_Calendar():
           key2 = self.Check_Key_Is_Near(key, settlements)
           if key2:
             key = key2
-            if settlements[key] != s:
-              settlements[key] = s
+            if settlements[key][0] != s:
+              settlements[key][0] = s
         # self.current_settlement_key = key
         # if key not in settlements:
         #   settlements[key] = s
@@ -552,24 +564,28 @@ class URL_Calendar():
           if key2:
             key = key2
           if key in settlements:
-            if (settlements[key] == "settlement"):
+            if (settlements[key][0] == "settlement"):
               s = msg.replace('The ','').replace('tribesman ','').replace('Old ','').replace('boy ','').replace('Maiden ','').replace('woodsman ','').replace('man ','').replace('hunter ','').replace(' withdraws from your way.','').replace('...','').replace('\ufffd','\u00e4') # replace question mark with ?
-              settlements[key] = s + ' ' + settlements[key]
+              if s not in names:
+                settlements[key][0] = s + ' ' + settlements[key][0]
+              else:
+                pass
       elif ('Zooming in ...' in msg):
         key = f'{x}:{y}'
         key2 = self.Check_Key_Is_Near(key, markers, 'home')
         if key2:
           self.at_home = True
       elif ('Zooming out ...' in msg):
-        if (self.in_settlement):
-          self.in_settlement = False
-          if not self.current_settlement_key:
-            key = f'{x}:{y}'
-            key2 = self.Check_Key_Is_Near(key, settlements)
-            if (key2 == None):
-              self.current_settlement_key = key
-            else:
-              self.current_settlement_key = key2
+        if (self.in_settlement or self.at_home):
+          if (self.in_settlement):
+            self.in_settlement = False
+            if not self.current_settlement_key:
+              key = f'{x}:{y}'
+              key2 = self.Check_Key_Is_Near(key, settlements)
+              if (key2 == None):
+                self.current_settlement_key = key
+              else:
+                self.current_settlement_key = key2
           if (self.at_home):
             self.Tally_Village_Goods('home')
           else:
@@ -581,8 +597,15 @@ class URL_Calendar():
       elif ('You see a marked location' in msg):
         text = msg.split('\"')
         key = f'{x}:{y}'
-        if key not in markers:
-          markers[key] = text[1]
+        markers[key] = text[1]
+      elif ('-- ' in msg): # this is a note
+        key = f'{x}:{y}'
+        note = msg.split('-- ')[1]
+        if (self.in_settlement):
+          key2 = self.Check_Key_Is_Near(key, settlements)
+          if key2:
+            key = key2
+          settlements[key].append(note)
       elif (msg == 'Ok. You finish the current building job.'):
         # look back to find last building name
         for j in range(1, 50):
@@ -611,8 +634,18 @@ class URL_Calendar():
           count, name = m.groups()
           name = name.lower()
           if ' ' in name:
+            name = name.split(' ')[1]+' cuts'
+          name +=' cuts'
+          food_items[name] = food_items.get(name, 0) + int(count)
+      elif ('you finished preparing' in msg and 'flatbread' in msg):
+        m = re.search(r'you finished preparing (\d+) (.*?) flatbread', msg)
+        if m:
+          count, name = m.groups()
+          name = name.lower()
+          if ' ' in name:
             name = name.split(' ')[1]
-          meat_cuts[name] = meat_cuts.get(name, 0) + int(count)
+          name += ' flatbreads'
+          food_items[name] = food_items.get(name, 0) + int(count)
       elif ('finish the tanning process and obtained a' in msg):
         m = re.search(r'obtained a (.*?) (.*?) (leather|fur)', msg)
         if m:
@@ -644,6 +677,8 @@ class URL_Calendar():
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Tendons')
       elif ('The retted nettles are now set in loose bundles to dry out fully, after which you can proceed to extract the fibre.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Nettles')
+      elif ('Return here after few days to retrieve the net and see if there' in msg):
+        self.Parse_Long_Process(lines, i, msg, fishing, 'Fishing')
       elif (self.in_settlement or self.at_home):
         if ('Things that are here:' in msg or 'There are several objects here:' in msg):
           self.Parse_Items_On_Ground(lines, i)
@@ -669,22 +704,24 @@ class URL_Calendar():
     # save new state
     tanning_outcomes = dict(sorted(tanning_outcomes.items()))
     kills = dict(sorted(kills.items()))
-    meat_cuts = dict(sorted(meat_cuts.items()))
+    food_items = dict(sorted(food_items.items()))
     self.new_state = {
-        'trees_felled': trees_felled,
-        'fires_made': fires_made,
+        'trees felled': trees_felled,
+        'fires made': fires_made,
         'sacrifices': sacrifices,
         'kills': kills,
-        'meat_cuts': meat_cuts,
-        'stored_food': self.food_storage,
+        'food items': food_items,
+        'stored food': self.food_storage,
         'settlements': settlements,
         'markers':markers,
-        'tanning_processes': tanning,
-        'cooking_processes': cooking,
-        'textile_processes':textile,
-        'tanning_outcomes': tanning_outcomes,
+        'tanning processes': tanning,
+        'cooking processes': cooking,
+        'textile processes': textile,
+        'fishing processes': fishing,
+        'tanning outcomes': tanning_outcomes,
         'buildings': building_counts,
-        'village_goods':self.village_goods
+        'village goods':self.village_goods,
+        'Names': names
     }
     self.Save_Json(STATE_FILE, self.new_state)
     self.Save_Json(PROGRESS_FILE, self.progress)
@@ -716,8 +753,8 @@ class URL_Calendar():
     #self.current_timestamp['day']=21 # debug specific dates
     #self.current_timestamp['month']=8 # debug specific dates
 
-    if 'cooking_processes' in self.new_state:
-      for o in self.new_state['cooking_processes']:
+    if 'cooking processes' in self.new_state:
+      for o in self.new_state['cooking processes']:
         cooking_end_date = gdt.GameDateTime(o['end'])
         cooking_start_date = gdt.GameDateTime(o['start'])
         if (cooking_end_date.year == self.current_timestamp.year):
@@ -746,8 +783,8 @@ class URL_Calendar():
         if (cooking_end_date.day == self.current_timestamp.day):
           self.todays_events[cooking_end_date.hour] = o['amount']
 
-    if 'tanning_processes' in self.new_state:
-      for t in self.new_state['tanning_processes']:
+    if 'tanning processes' in self.new_state:
+      for t in self.new_state['tanning processes']:
         tanning_end_date = gdt.GameDateTime(t['end'])
         cal_day = tanning_end_date.calendar_day
         if (tanning_end_date.year == self.current_timestamp.year):
@@ -760,8 +797,8 @@ class URL_Calendar():
           d_w = tanning_end_date.weekday
           self.weekly_events[(d_w, tanning_end_date.hour)].append('Tanning')
 
-    if 'textile_processes' in self.new_state:
-      for t in self.new_state['textile_processes']:
+    if 'textile processes' in self.new_state:
+      for t in self.new_state['textile processes']:
         end_date = gdt.GameDateTime(t['end'])
         cal_day = end_date.calendar_day
         if (end_date.year == self.current_timestamp.year):
@@ -776,9 +813,22 @@ class URL_Calendar():
         if (end_date.week == self.current_timestamp.week):
           d_w = end_date.weekday
           self.weekly_events[(d_w, end_date.hour)].append(t['type'])
+    
+    if 'fishing processes' in self.new_state:
+      for t in self.new_state['fishing processes']:
+        end_date = gdt.GameDateTime(t['end'])
+        cal_day = end_date.calendar_day
+        if (end_date.year == self.current_timestamp.year):
+          if (t['type'] == 'Fishing'):
+            self.Add_Event(cal_day, 'F')
+        if (cal_day == self.current_timestamp.calendar_day):
+          self.todays_events[end_date.hour] = t['type']
+        if (end_date.week == self.current_timestamp.week):
+          d_w = end_date.weekday
+          self.weekly_events[(d_w, end_date.hour)].append(t['type'])
 
-    if 'blacksmith_processes' in self.reminders:
-      for b in self.reminders['blacksmith_processes']:
+    if 'blacksmith processes' in self.reminders:
+      for b in self.reminders['blacksmith processes']:
         end_date = gdt.GameDateTime(b['finish'])
         cal_day = end_date.calendar_day
         if (end_date.year == self.current_timestamp.year):
@@ -833,6 +883,8 @@ class URL_Calendar():
           m = re.search(r'after (\d+) days', lines[j])
           if m:
             duration = int(m.group(1))
+      elif 'Return here after ' in lines[i]:
+        duration = 2
       if duration:
         if self.current_timestamp:
           end_date = self.current_timestamp + duration
@@ -940,6 +992,14 @@ class URL_Calendar():
     else:
       return None, False
   
+  def CheckBlackListedStrings(self, line, blacklist):
+    for item in blacklist:
+      if item in line:
+        return True
+
+    else:
+      return False
+
   def Parse_One_Item(self, line):
     items = []
     cuts_at_home = False
@@ -950,11 +1010,11 @@ class URL_Calendar():
         hotkey = match.group(1)
         if (hotkey.isupper()): # Uppercase letters indicate things that are not laying on ground, but are rather persons or building types
           return
-      if ('called' in line) or (' rock ' in line) or (' log' in line) or (' patch' in line): # dont count your named animal
+      if (self.CheckBlackListedStrings(line, ['called',' rock ' ,' log','patch', ' boy', 'growing', ' man', 'wife', 'girl' ])): # dont count your named animal
         #print(line)
         return
       if (self.at_home):
-        if ('cut' not in line):
+        if ('cut' not in line) and ('flatbread' not in line):
           return
         elif ('(being prepared)' in line):
           return
@@ -999,7 +1059,7 @@ class URL_Calendar():
         if ('called' in line): # dont count your named animal
           continue
         if (self.at_home):
-          if ('cut' not in line):
+          if ('cut' not in line) and ('flatbread' not in line):
             continue
           elif ('(being prepared)' in line):
             continue
@@ -1011,6 +1071,8 @@ class URL_Calendar():
         break
       elif ('You ' in line):
         break
+      elif ('Things that ' in line):
+        break
     if items:
       if (cuts_at_home):
         index, fuzzy_matched = self.Check_Food_Items_Are_Same(items, fuzzy)
@@ -1018,7 +1080,7 @@ class URL_Calendar():
           self.revisited_tile = index
           if (fuzzy):
             self.fuzzy_village_content.append(index)
-            self.temp_village_content[index]=items
+          self.temp_village_content[index]=items
         else:
           self.temp_village_content.append(items)
           if (fuzzy):
@@ -1047,7 +1109,7 @@ class URL_Calendar():
 
   def Pick_Up_Items_On_Ground(self, line):
     items = []
-    if('cut' in line):
+    if ('cut' in line) or ('flatbread' in line):
       item = line = line.replace('You pick up the ', '')[:-1]
       item, number = self.Parse_Item_Msg_Line(line)
       i = 0
@@ -1081,7 +1143,7 @@ class URL_Calendar():
     return
 
   def Drop_Items_On_Ground(self, line):
-    if('cut' in line):
+    if ('cut' in line) or ('flatbread' in line):
       line = line.replace('You drop the ', '')[:-1]
       item, number = self.Parse_Item_Msg_Line(line)
       found = False
@@ -1118,7 +1180,7 @@ class URL_Calendar():
       for item in tile_contents:
         count_this = False
         if (key == 'home'):
-          if('cut' in item):
+          if ('cut' in item) or ('flatbread' in item):
             #if ('spoiled' not in item):
             count_this = True
         else:
@@ -1163,11 +1225,11 @@ class URL_Calendar():
 
   def GetFoodStorageInWeeks(self):
     weeks = 0
-    meat_cuts = 0
+    food_items = 0
     for item in self.food_storage:
-      meat_cuts += self.food_storage[item]
+      food_items += self.food_storage[item]
 
-    weeks = meat_cuts / 32
+    weeks = food_items / 32
 
     return weeks
 
@@ -1306,8 +1368,8 @@ class URL_Calendar():
               if (mouse_pos[0] >= week_x) and (mouse_pos[0] < week_x+box_width):
                 if (mouse_pos[1] >= box_y) and (mouse_pos[1] < box_y+box_height):
 
-                  if 'blacksmith_processes' in self.reminders:
-                    for events in self.reminders['blacksmith_processes']:
+                  if 'blacksmith processes' in self.reminders:
+                    for events in self.reminders['blacksmith processes']:
                       blacksmith_date = gdt.GameDateTime(events['finish'])
                       if (blacksmith_date.IsSameDayAs(drawing_date)):
                         
@@ -1546,22 +1608,24 @@ class URL_Calendar():
               pygame.draw.polygon(self.screen, (0,255, 255), [tip, left, right])
 
     else:
-      text = self.BIG_FONT.render("No map tiles found in folder: ", True, BLACK)
-      self.screen.blit(text, (self.map_x+5, self.map_y))
+      if print_once:
+        text = self.BIG_FONT.render("No map tiles found in folder: ", True, BLACK)
+        self.screen.blit(text, (self.map_x+5, self.map_y))
 
-      text = self.BIG_FONT.render(TILES_PATH, True, BLACK)
-      self.screen.blit(text, (self.map_x+5, self.map_y+25))
+        text = self.BIG_FONT.render(TILES_PATH, True, BLACK)
+        self.screen.blit(text, (self.map_x+5, self.map_y+25))
 
-      text = self.BIG_FONT.render('Use tool urwmap to extract tiles and place in the folder above.', True, BLACK)
-      self.screen.blit(text, (self.map_x+5, self.map_y+50))
+        text = self.BIG_FONT.render('Use tool urwmap to extract tiles and place in the folder above.', True, BLACK)
+        self.screen.blit(text, (self.map_x+5, self.map_y+50))
 
-      text = self.BIG_FONT.render('Download the tool here:', True, BLACK)
-      self.screen.blit(text, (self.map_x+5, self.map_y+75))
+        text = self.BIG_FONT.render('Download the tool here:', True, BLACK)
+        self.screen.blit(text, (self.map_x+5, self.map_y+75))
 
-      text = self.BIG_FONT.render('https://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html', True, BLACK)
-      self.screen.blit(text, (self.map_x+5, self.map_y+100))
+        text = self.BIG_FONT.render('https://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html', True, BLACK)
+        self.screen.blit(text, (self.map_x+5, self.map_y+100))
       
-      print('Download urwmap-0.0.3 from here:\nhttps://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html')
+        print('Download urwmap-0.0.3 from here:\nhttps://www.tapatalk.com/groups/urwforum/map-viewer-t7712.html')
+        print_once = False
 
     mouse_pos = pygame.mouse.get_pos()
 
@@ -1589,20 +1653,20 @@ class URL_Calendar():
 
           if (abs(coord_x - int(key_split[0])) < 4/self.zoom_level):
             if (abs(coord_y - int(key_split[1])) < 4/self.zoom_level):
-              village_goods = self.new_state.get('village_goods')
-              
-              txtLines = [self.BIG_FONT.render(settlements[key], True, BLACK)]
+              village_goods = self.new_state.get('village goods')
+              txtLines = []
               txtWidth = 0
+              for s in settlements[key]:
+                txtLines.append(self.BIG_FONT.render(s, True, BLACK))
+                txtWidth = max(txtWidth, txtLines[-1].get_rect()[2])
               if key in village_goods:
-                lineNr = 1
                 for k in village_goods[key]:
                   if ((k.find('shingle') == -1) and (k.find('tub') == -1) and (k.find('rock') == -1) and (k.find('stone') == -1)):
                     txtLines.append(self.BIG_FONT.render(f'{k}:{village_goods[key][k]}', True, BLACK))
                     txtWidth = max(txtWidth, txtLines[-1].get_rect()[2])
-                    lineNr+=1
                 textBoxCoord = mouse_pos[1]+5
-                if ((mouse_pos[1]+5+lineNr*20) > SCREEN_HEIGHT-25):
-                  textBoxCoord = SCREEN_HEIGHT - 25 - (lineNr*20)
+                if ((mouse_pos[1]+5+len(txtLines)*20) > SCREEN_HEIGHT-25):
+                  textBoxCoord = SCREEN_HEIGHT - 25 - (len(txtLines)*20)
                 lineNr = 1
                 for text in txtLines:
                   pygame.draw.rect(self.screen, GRAY, (mouse_pos[0]+20, textBoxCoord+lineNr*20, txtWidth, text.get_rect()[3]))
@@ -1624,11 +1688,10 @@ class URL_Calendar():
   def Draw_Menu(self):
     MENU_WIDTH = 120
     MENU_HEIGHT = 20
-    menu_items = ['Set reminder for:', 'Axe', 'Knife','Needle', 'Arrowheads', 'Spear']
     if (self.menu_open):
-      for i in range(len(menu_items)):
+      for i in range(len(self.menu_items)):
         pygame.draw.rect(self.screen, GRAY, (self.menu_pos[0], self.menu_pos[1]+i*MENU_HEIGHT, MENU_WIDTH, MENU_HEIGHT))
-        menu_text = self.BIG_FONT.render(menu_items[i], True, BLACK)
+        menu_text = self.BIG_FONT.render(self.menu_items[i], True, BLACK)
         self.screen.blit(menu_text, (self.menu_pos[0], self.menu_pos[1]+i*MENU_HEIGHT))
 
   def Draw_Tooltip(self):
@@ -1660,18 +1723,17 @@ class URL_Calendar():
     if (self.menu_open):
       MENU_WIDTH = 120
       MENU_HEIGHT = 20
-      menu_items = ['Set reminder for:', 'Axe', 'Knife','Needle', 'Arrowheads', 'Spear']
       if (mouse_pos[0] >= self.menu_pos[0]) and (mouse_pos[0] < self.menu_pos[0]+MENU_WIDTH):
-        for i in range(len(menu_items)):
+        for i in range(len(self.menu_items)):
           if (mouse_pos[1] >= self.menu_pos[1]+i*MENU_HEIGHT) and (mouse_pos[1] < self.menu_pos[1]+i*MENU_HEIGHT+MENU_HEIGHT):
             if i > 0:
               #print('Selected ',menu_items[i], self.menu_date)
-              self.blacksmith.append({'type': menu_items[i],
+              self.blacksmith.append({'type': self.menu_items[i],
                                       'location': f'{self.last_x}:{self.last_y}',
                                       'finish': self.menu_date.GetDateTime()
                                     })
                 
-              self.reminders = {'blacksmith_processes':self.blacksmith}
+              self.reminders = {'blacksmith processes':self.blacksmith}
               self.Save_Json(REMINDERS_FILE, self.reminders)
               self.Fill_Events()
 
