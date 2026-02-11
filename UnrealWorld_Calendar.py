@@ -416,7 +416,7 @@ class URL_Calendar():
     trees_felled = self.state.get('trees felled', 0)
     fires_made = self.state.get('fires made', 0)
     sacrifices = self.state.get('sacrifices', 0)
-    kills = self.state.get('kills', {})
+    self.kills = self.state.get('kills', {})
     food_items = self.state.get('food items', {})
     self.food_storage = self.state.get('stored food', {})
     tanning = self.state.get('tanning processes', [])
@@ -503,7 +503,7 @@ class URL_Calendar():
       if 'I shall name you...' in msg:
         self.has_dog = True
         for j in range(4):
-          if 'barks.' in lines[i+j]:
+          if 'barks.' in lines[min(i+j,len(lines)-1)]:
             name = lines[i+j].split(' | ')[1].split(' barks.')[0]
             names.append(name)
             break
@@ -627,7 +627,7 @@ class URL_Calendar():
           name = m.group(1).strip().lower().replace(' calf', '')
           if ' ' in name:
             name = name.split(' ')[1]
-          kills[name] = kills.get(name, 0) + 1
+          self.kills[name] = self.kills.get(name, 0) + 1
       elif ('You got' in msg and 'meat' in msg):
         m = re.search(r'You got (\d+) edible cuts of (.*?) meat', msg)
         if m:
@@ -637,6 +637,8 @@ class URL_Calendar():
             name = name.split(' ')[1]+' cuts'
           name +=' cuts'
           food_items[name] = food_items.get(name, 0) + int(count)
+      elif ('You caught' in msg):
+        self.ParseFishing(msg)
       elif ('you finished preparing' in msg and 'flatbread' in msg):
         m = re.search(r'you finished preparing (\d+) (.*?) flatbread', msg)
         if m:
@@ -676,7 +678,7 @@ class URL_Calendar():
       elif ('tendons are now left to dry, after which you can proceed to separate the sinew fibre.' in msg):
         self.Parse_Long_Process(lines, i, msg, textile, 'Drying Tendons')
       elif ('The retted nettles are now set in loose bundles to dry out fully, after which you can proceed to extract the fibre.' in msg):
-        self.Parse_Long_Process(lines, i, msg, textile, 'Drying Nettles')
+        self.Parse_Long_Process(lines, i, msg, textile, 'Nettles')
       elif ('Return here after few days to retrieve the net and see if there' in msg):
         self.Parse_Long_Process(lines, i, msg, fishing, 'Fishing')
       elif (self.in_settlement or self.at_home):
@@ -703,13 +705,13 @@ class URL_Calendar():
 
     # save new state
     tanning_outcomes = dict(sorted(tanning_outcomes.items()))
-    kills = dict(sorted(kills.items()))
+    self.kills = dict(sorted(self.kills.items()))
     food_items = dict(sorted(food_items.items()))
     self.new_state = {
         'trees felled': trees_felled,
         'fires made': fires_made,
         'sacrifices': sacrifices,
-        'kills': kills,
+        'kills': self.kills,
         'food items': food_items,
         'stored food': self.food_storage,
         'settlements': settlements,
@@ -804,9 +806,9 @@ class URL_Calendar():
         if (end_date.year == self.current_timestamp.year):
           if (t['type'] == 'Retting'):
             self.Add_Event(cal_day, 'R')
-          elif (t['type'] == 'Drying Nettles'):
+          elif (t['type'] == 'Nettles'):
             self.Add_Event(cal_day, 'd')
-          elif (t['type'] == 'Drying Tendons'):
+          elif (t['type'] == 'Tendons'):
             self.Add_Event(cal_day, 't')
         if (cal_day == self.current_timestamp.calendar_day):
           self.todays_events[end_date.hour] = t['type']
@@ -875,33 +877,36 @@ class URL_Calendar():
 
   def Parse_Long_Process(self, lines, i, msg, item, process_type, amount=None):
     duration = None
-    for j in range(i+1, min(i+4, len(lines))):
-      if 'should be complete' in lines[j]:
-        if 'tomorrow' in lines[j]:
-          duration = 1
-        else:
-          m = re.search(r'after (\d+) days', lines[j])
-          if m:
-            duration = int(m.group(1))
-      elif 'Return here after ' in lines[i]:
-        duration = 2
-      if duration:
-        if self.current_timestamp:
-          end_date = self.current_timestamp + duration
-          if (amount):
-            item.append({
-              'type': process_type,
-              'amount': amount,
-              'start': self.current_timestamp.GetDateTime(),
-              'end': end_date.GetDateTime()
-            })
+    if 'Return here after ' in lines[i]:
+      duration = 2
+    else:
+      for j in range(i+1, min(i+4, len(lines))):
+        if 'should be complete' in lines[j]:
+          if 'tomorrow' in lines[j]:
+            duration = 1
+            break
           else:
-            item.append({
-              'type': process_type,
-              'start': self.current_timestamp.GetDateTime(),
-              'end': end_date.GetDateTime()
-            })
-          break
+            m = re.search(r'after (\d+) days', lines[j])
+            if m:
+              duration = int(m.group(1))
+              break
+
+    if duration:
+      if self.current_timestamp:
+        end_date = self.current_timestamp + duration
+        if (amount):
+          item.append({
+            'type': process_type,
+            'amount': amount,
+            'start': self.current_timestamp.GetDateTime(),
+            'end': end_date.GetDateTime()
+          })
+        else:
+          item.append({
+            'type': process_type,
+            'start': self.current_timestamp.GetDateTime(),
+            'end': end_date.GetDateTime()
+          })
 
   def Parse_Short_Process(self, msg, item):
     if self.current_timestamp:
@@ -924,6 +929,24 @@ class URL_Calendar():
           'end': end_date.GetDateTime(),
           'timeframe': end_date_text
       })
+
+  def ParseFishing(self, msg):
+    # You caught a burbot and 5 breams!
+    msg = msg.replace('You caught ', '' )
+    if (', ' in msg):
+      tokens = self.Split_multi(msg, [', ', ' and '])
+    else:
+      tokens = msg.split(' and ')
+    for t in tokens:
+      [num, name] = t.split(' ')
+      try:
+        num = int(num)
+      except:
+        num = 1
+      name = name.replace('!','')
+      if name.endswith('s'):
+        name = name[:-1]
+      self.kills[name] = self.kills.get(name, 0) + num
 
   def Get_Item_Group_From_Unique_Name (self, name):
     return name.replace('spoiled ', '').replace('stale ', '').replace('tasty ', '').replace('bland ', '')
@@ -1014,7 +1037,7 @@ class URL_Calendar():
         #print(line)
         return
       if (self.at_home):
-        if ('cut' not in line) and ('flatbread' not in line):
+        if ('cut' not in line) and ('flatbread' not in line) and ('roasted' not in line) and ('smoked' not in line) and ('salted' not in line):
           return
         elif ('(being prepared)' in line):
           return
@@ -1059,7 +1082,7 @@ class URL_Calendar():
         if ('called' in line): # dont count your named animal
           continue
         if (self.at_home):
-          if ('cut' not in line) and ('flatbread' not in line):
+          if ('cut' not in line) and ('flatbread' not in line) and ('roasted' not in line) and ('smoked' not in line) and ('salted' not in line):
             continue
           elif ('(being prepared)' in line):
             continue
@@ -1109,7 +1132,7 @@ class URL_Calendar():
 
   def Pick_Up_Items_On_Ground(self, line):
     items = []
-    if ('cut' in line) or ('flatbread' in line):
+    if ('cut' in line) or ('flatbread' in line) or ('roasted' in line) or ('smoked' in line) or ('salted' in line):
       item = line = line.replace('You pick up the ', '')[:-1]
       item, number = self.Parse_Item_Msg_Line(line)
       i = 0
@@ -1143,7 +1166,7 @@ class URL_Calendar():
     return
 
   def Drop_Items_On_Ground(self, line):
-    if ('cut' in line) or ('flatbread' in line):
+    if ('cut' in line) or ('flatbread' in line) or ('roasted' in line) or ('smoked' in line) or ('salted' in line):
       line = line.replace('You drop the ', '')[:-1]
       item, number = self.Parse_Item_Msg_Line(line)
       found = False
@@ -1180,7 +1203,7 @@ class URL_Calendar():
       for item in tile_contents:
         count_this = False
         if (key == 'home'):
-          if ('cut' in item) or ('flatbread' in item):
+          if ('cut' in item) or ('flatbread' in item) or ('roasted' in item) or ('smoked' in item) or ('salted' in item):
             #if ('spoiled' not in item):
             count_this = True
         else:
@@ -1277,9 +1300,14 @@ class URL_Calendar():
           events = self.weekly_events.get((i+1, hour), [])
           if events:
             text_color = EVENT_COLOR_HIGHLIGHTED if is_now else EVENT_COLOR
-            for k, event in enumerate(events[:1]):
-              text = self.font_wk_cal.render(event, True, text_color)
-              calendar_surface.blit(text, (x + 4, y + 0))
+            drawn_events = []
+            for k, event in enumerate(events):
+              if (event not in drawn_events):
+                drawn_events.append(event)
+                if (k>0):
+                  event = ','+event
+                text = self.font_wk_cal.render(event, True, text_color)
+                calendar_surface.blit(text, ((k*40)+x + 4, y + 0))
 
     # Grid border
     total_height = (len(VISIBLE_HOURS)-1) * HOUR_HEIGHT
@@ -1738,6 +1766,27 @@ class URL_Calendar():
               self.Fill_Events()
 
             self.menu_open = False
+
+  def Split_multi(self, s: str, seps: list[str]) -> list[str]:
+    tokens = []
+    i = 0
+    start = 0
+
+    while i < len(s):
+        for sep in seps:
+            if s.startswith(sep, i):
+                if start != i:
+                    tokens.append(s[start:i])
+                i += len(sep)
+                start = i
+                break
+        else:
+            i += 1
+
+    if start < len(s):
+        tokens.append(s[start:])
+
+    return tokens
 
 # Colors
 BLACK = (0, 0, 0)
